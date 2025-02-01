@@ -122,7 +122,6 @@ function ropi:request(api, method, endpoint, headers, body, retryCount)
 
 	body = (body and type(body) == "table" and json.encode(body)) or (type(body) == "string" and body) or nil
 
-	print(method, url)
 	local result, response = http.request(method, url, headers, body)
 	response = (response and type(response) == "string" and json.decode(response)) or nil
 
@@ -130,7 +129,7 @@ function ropi:request(api, method, endpoint, headers, body, retryCount)
 		RETRY_AFTER = 2000
 		return true, response
 	elseif result.code == 429 then
-		print("Retrying after " .. RETRY_AFTER .. "ms...")
+		print("[ROPI] | Retrying after " .. RETRY_AFTER .. "ms...")
 		timer.sleep(RETRY_AFTER)
 		RETRY_AFTER = RETRY_AFTER * 2
 		
