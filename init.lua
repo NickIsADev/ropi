@@ -104,13 +104,20 @@ local function User(data)
 	}
 end
 
+local function Error(code, message)
+	return {
+		code = code,
+		message = message
+	}
+end
+
 -- request handler
 
 function ropi:request(api, method, endpoint, headers, body, retryCount)
 	retryCount = retryCount or 0
 	
 	if retryCount >= MAX_RETRIES then
-		return false, "The resource is being ratelimited."
+		return false, Error(429, "The resource is being ratelimited.")
 	end
 
     local url = "https://" .. api .. ".roblox.com/v1/" .. endpoint
@@ -135,7 +142,7 @@ function ropi:request(api, method, endpoint, headers, body, retryCount)
 		
 		return ropi:request(api, method, endpoint, headers, body, retryCount + 1)
 	else
-		return false, response or result
+		return false, Error(result.code, result.reason)
 	end
 end
 
