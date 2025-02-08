@@ -18,9 +18,12 @@ return {
         "roblox"
     },
     author = {
-        name = "Troptop",
+        name = "NickIsADev",
         url = "https://github.com/NickIsADev",
         email = "troptop@duckybot.xyz"
+    },
+    contributors = {
+        "bobbibones0"
     },
     files = {
         "**.lua",
