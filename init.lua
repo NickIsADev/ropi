@@ -50,6 +50,10 @@ end
 
 local function fromISO(iso)
 	local year, month, day, hour, min, sec, ms = iso:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+).(%d+)Z")
+
+	if not year or not month or not day or not hour or not min or not sec or not ms then
+		return
+	end
 	
 	local epoch = os.time({
 		year = tonumber(year),
@@ -149,6 +153,10 @@ end
 -- api functions
 
 function ropi.GetAvatarHeadShot(id, opts, refresh)
+	if type(id) ~= "string" and type(id) ~= "number" then
+		return nil, Error(400, "An invalid ID was provided to GetAvatarHeadShot.")
+	end
+	
 	opts = opts or {}
 	id = tonumber(id) or 0
 
@@ -176,6 +184,10 @@ function ropi.GetAvatarHeadShot(id, opts, refresh)
 end
 
 function ropi.GetUser(id, refresh)
+	if type(id) ~= "string" and type(id) ~= "number" then
+		return nil, Error(400, "An invalid ID was provided to GetUser.")
+	end
+	
 	if not refresh then
 		local cached = fromCache(id)
 		if cached then
@@ -193,6 +205,10 @@ function ropi.GetUser(id, refresh)
 end
 
 function ropi.SearchUser(name, refresh)
+	if type(name) ~= "string" and type(id) ~= "number" then
+		return nil, Error(400, "An invalid name/ID was provided to SearchUser.")
+	end
+	
 	if tonumber(name) then
 		return ropi.GetUser(name, refresh)
 	end
