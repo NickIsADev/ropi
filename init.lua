@@ -5,7 +5,8 @@ local timer = require("timer")
 local ropi = {
 	cache = {
 		users = {},
-		avatars = {}
+		avatars = {},
+		groups = {}
 	}
 }
 
@@ -49,6 +50,10 @@ local function hasHeader(headers, name)
 end
 
 local function fromISO(iso)
+	if not iso then
+		return nil
+	end
+
 	local year, month, day, hour, min, sec, ms = iso:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+).(%d+)Z")
 
 	if not year or not month or not day or not hour or not min or not sec or not ms then
@@ -70,23 +75,23 @@ end
 
 -- cache utilities
 
-local function intoCache(user)
-	for i = #ropi.cache.users,1,-1 do
-		local u = ropi.cache.users[i]
-		if u.id == user.id then
-			table.remove(ropi.cache.users, i)
+local function intoCache(item, category)
+	for i = #ropi.cache[category],1,-1 do
+		local u = ropi.cache[category][i]
+		if u.id == item.id then
+			table.remove(ropi.cache[category], i)
 		end
 	end
 
-	table.insert(ropi.cache.users, user)
+	table.insert(ropi.cache[category], item)
 
-	return user
+	return item
 end
 
-local function fromCache(query)
-	for _, u in pairs(ropi.cache.users) do
-		if (type(query) == "string" and u.name:lower() == query:lower()) or (type(query) == "number" and u.id == query) then
-			return u
+local function fromCache(query, category)
+	for _, item in pairs(ropi.cache[category]) do
+		if (type(query) == "string" and item.name:lower() == query:lower()) or (type(query) == "number" and item.id == query) then
+			return item
 		end
 	end
 end
@@ -105,6 +110,32 @@ local function User(data)
 		created = fromISO(data.created),
 		profile = "https://roblox.com/users/" .. data.id .. "/profile",
 		hyperlink = "[" .. data.name .. "](https://roblox.com/users/" .. data.id .. "/profile)"
+	}
+end
+
+local function groupUser(data)
+	return {
+		name = data.username,
+		displayName = data.displayName,
+		id = data.userId,
+		verified = not not data.hasVerifiedBadge,
+		profile = "https://roblox.com/users/" .. data.userId .. "/profile",
+		hyperlink = "[" .. data.username .. "](https://roblox.com/users/" .. data.userId .. "/profile)"
+	}
+end
+
+local function Group(data)
+	return {
+		name = data.name,
+		id = data.id,
+		description = data.description,
+		owner = groupUser(data.owner),
+		memberCount = data.memberCount,
+		currentShout = data.shout,
+		verified = not not data.hasVerifiedBadge,
+		isPublic = not not data.publicEntryAllowed,
+		link = "https://www.roblox.com/communities/" .. data.id,
+		hyperlink = "[" .. data.name .. "](https://www.roblox.com/communities/" .. data.id ..")"
 	}
 end
 
@@ -189,7 +220,7 @@ function ropi.GetUser(id, refresh)
 	end
 	
 	if not refresh then
-		local cached = fromCache(id)
+		local cached = fromCache(id, "users")
 		if cached then
 			return cached
 		end
@@ -198,7 +229,7 @@ function ropi.GetUser(id, refresh)
 	local success, user = ropi:request("users", "GET", "users/" .. id)
 
 	if success and user and user.name and user.displayName and user.id then
-		return intoCache(User(user))
+		return intoCache(User(user), "users")
 	else
 		return nil, user
 	end
@@ -214,7 +245,7 @@ function ropi.SearchUser(name, refresh)
 	end
 	
 	if not refresh then
-		local cached = fromCache(name)
+		local cached = fromCache(name, "users")
 		if cached then
 			return cached
 		end
@@ -232,6 +263,49 @@ function ropi.SearchUser(name, refresh)
 	else
 		return nil, response
 	end
+end
+
+function ropi.GetGroup(id, refresh)
+	if type(id) ~= "string" and type(id) ~= "number" then
+		return nil, Error(400, "An invalid ID was provided to GetGroup.")
+	end
+	
+	if not refresh then
+		local cached = fromCache(id, "groups")
+		if cached then
+			return cached
+		end
+	end
+
+	local success, group = ropi:request("groups", "GET", "groups/" .. id)
+
+	if success and group and group.name and group.id then
+		return intoCache(Group(group), "groups")
+	else
+		return nil, group
+	end
+end
+
+function ropi.GetGroupMembers(id)
+	local members = {}
+	local cursor = nil
+
+	repeat
+		local url = "groups/" .. id .. "/users?limit=100" .. ((cursor and "&cursor=" .. cursor) or "")
+		local success, response = ropi:request("groups", "GET", url)
+
+		if success and response then
+			for _, userdata in pairs(response.data or {}) do
+				table.insert(members, groupUser(userdata.user))
+			end
+
+			cursor = response.nextPageCursor
+		else
+			break
+		end
+	until not cursor
+
+	return true, members
 end
 
 return ropi
