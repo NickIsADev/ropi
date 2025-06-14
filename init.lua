@@ -217,9 +217,11 @@ function ropi.GetToken()
     })
 
     for _, header in pairs(result) do
-	if type(header[1]) == "string" and header[1]:lower() == "x-csrf-token" then
-		return true, header[2]
-	end
+        for name, value in pairs(header) do
+            if name:lower() == "x-csrf-token" then
+                return true, value
+            end
+        end
     end
 
     return false, Error(500, "A token was not provided by the server.")
@@ -352,7 +354,7 @@ end
 
 function ropi.GetGroupTransactions(id)
     if not ropi.cookie then
-        return Error(400, ".ROBLOSECURITY cookie has not yet been set.")
+        return nil, Error(400, ".ROBLOSECURITY cookie has not yet been set.")
     end
 
     local success, token = ropi.GetToken()
@@ -364,8 +366,8 @@ function ropi.GetGroupTransactions(id)
 	local cursor = nil
 
 	repeat
-		local url = "groups/" .. id .. "/transactions?limit=25&transactionType=Sale" .. ((cursor and "&cursor=" .. cursor) or "")
-		local success, response = ropi:request("economy", "GET", url, {
+		local url = "groups/" .. id .. "/transactions?limit=100&transactionType=Sale" .. ((cursor and "&cursor=" .. cursor) or "")
+		local success, response, result = ropi:request("economy", "GET", url, {
             {"Cookie", ropi.cookie},
             {"X-Csrf-Token", token}
         }, nil, nil, "v2")
@@ -377,6 +379,7 @@ function ropi.GetGroupTransactions(id)
 
 			cursor = response.nextPageCursor
 		else
+			p("ropi cursor fail", success, response, result)
 			break
 		end
 	until not cursor
