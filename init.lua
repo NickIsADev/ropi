@@ -199,7 +199,7 @@ function ropi:request(api, method, endpoint, headers, body, retryCount, version)
 		
 		return ropi:request(api, method, endpoint, headers, body, retryCount + 1, version)
 	else
-		return false, Error(result.code, result.reason)
+		return false, Error(result.code, result.reason), result
 	end
 end
 
