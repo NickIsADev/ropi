@@ -217,11 +217,9 @@ function ropi.GetToken()
     })
 
     for _, header in pairs(result) do
-        for name, value in pairs(header) do
-            if name:lower() == "x-csrf-token" then
-                return true, value
-            end
-        end
+        if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "x-csrf-token" then
+			return true, header[2]
+		end
     end
 
     return false, Error(500, "A token was not provided by the server.")
