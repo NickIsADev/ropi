@@ -382,6 +382,10 @@ function ropi.GetGroupTransactions(id)
 		end
 	until not cursor
 
+	table.sort(transactions, function(a, b)
+		return a.created > b.created
+	end)
+
     return transactions
 end
 
