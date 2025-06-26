@@ -350,7 +350,7 @@ function ropi.GetGroupMembers(id, full)
 	return true, members
 end
 
-function ropi.GetGroupTransactions(id)
+function ropi.GetGroupTransactions(id, all)
     if not ropi.cookie then
         return nil, Error(400, ".ROBLOSECURITY cookie has not yet been set.")
     end
@@ -380,7 +380,7 @@ function ropi.GetGroupTransactions(id)
 			p("ropi cursor fail", success, response, result)
 			break
 		end
-	until not cursor
+	until (not cursor) or (not all)
 
 	table.sort(transactions, function(a, b)
 		return a.created > b.created
