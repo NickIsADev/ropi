@@ -389,7 +389,7 @@ function ropi.GetGroupTransactions(id, all)
     return transactions
 end
 
-function ropi.SetAssetPrice(assetID, price)
+function ropi.SetAssetPrice(collectibleID, price)
 	if not ropi.cookie then
         return nil, Error(400, ".ROBLOSECURITY cookie has not yet been set.")
     end
@@ -400,16 +400,11 @@ function ropi.SetAssetPrice(assetID, price)
         return token
     end
 
-	if (not assetID) or type(assetID) ~= "string" then
-		return nil, Error(400, "Asset ID was not provided as a string.")
+	if (not collectibleID) or type(collectibleID) ~= "string" then
+		return nil, Error(400, "Collectible ID was not provided as a string.")
+	elseif collectibleID:len() < 10 then
+		return nil, Error(400, "A malformed collectible ID was provided.")
 	end
-
-	local success, response, result = ropi:request("itemconfiguration", "GET", "collectibles/0/" .. assetID, {
-		{"Cookie", ropi.cookie},
-		{"X-Csrf-Token", token}
-	})
-
-	local collectibleID = response and response.collectibleItemId
 
 	local success, response, result = ropi:request("itemconfiguration", "PATCH", "collectibles/" .. collectibleID, {
 		{"Cookie", ropi.cookie},
