@@ -400,7 +400,14 @@ function ropi.SetAssetPrice(assetID, price)
         return token
     end
 
-	local success, response, result = ropi:request("itemconfiguration", "PATCH", "collectibles/0/" .. assetID, {
+	local success, response, result = ropi:request("itemconfiguration", "GET", "collectibles/0/" .. assetID, {
+		{"Cookie", ropi.cookie},
+		{"X-Csrf-Token", token}
+	})
+
+	local collectibleID = response and response.data and response.data.collectibleItemId
+
+	local success, response, result = ropi:request("itemconfiguration", "PATCH", "collectibles/" .. collectibleID, {
 		{"Cookie", ropi.cookie},
 		{"X-Csrf-Token", token}
 	}, {
