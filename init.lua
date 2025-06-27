@@ -400,12 +400,16 @@ function ropi.SetAssetPrice(assetID, price)
         return token
     end
 
+	if (not assetID) or type(assetID) ~= "string" then
+		return nil, Error(400, "Asset ID was not provided as a string.")
+	end
+
 	local success, response, result = ropi:request("itemconfiguration", "GET", "collectibles/0/" .. assetID, {
 		{"Cookie", ropi.cookie},
 		{"X-Csrf-Token", token}
 	})
 
-	local collectibleID = response and response.data and response.data.collectibleItemId
+	local collectibleID = response and response.collectibleItemId
 
 	local success, response, result = ropi:request("itemconfiguration", "PATCH", "collectibles/" .. collectibleID, {
 		{"Cookie", ropi.cookie},
