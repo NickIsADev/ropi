@@ -360,6 +360,7 @@ function ropi.GetGroupTransactions(id, all)
     if not success then
         return token
     end
+
     local transactions = {}
 	local cursor = nil
 
@@ -377,7 +378,6 @@ function ropi.GetGroupTransactions(id, all)
 
 			cursor = response.nextPageCursor
 		else
-			p("ropi cursor fail", success, response, result)
 			break
 		end
 	until (not cursor) or (not all)
@@ -387,6 +387,40 @@ function ropi.GetGroupTransactions(id, all)
 	end)
 
     return transactions
+end
+
+function ropi.SetAssetPrice(assetID, price)
+	if not ropi.cookie then
+        return nil, Error(400, ".ROBLOSECURITY cookie has not yet been set.")
+    end
+
+    local success, token = ropi.GetToken()
+
+    if not success then
+        return token
+    end
+
+	local success, response, result = ropi:request("itemconfiguration", "PATCH", "collectibles/0/" .. assetID, {
+		{"Cookie", ropi.cookie},
+		{"X-Csrf-Token", token}
+	}, {
+		saleLocationConfiguration = {
+			saleLocationType = 1,
+			places = {}
+		},
+		saleStatus = 0,
+		quantityLimitPerUser = 0,
+		resaleRestriction = 2,
+		priceInRobux = price,
+		priceOffset = 0,
+		isFree = false
+	})
+
+	if success and response then
+		return true
+	else
+		return false, result
+	end
 end
 
 return ropi
