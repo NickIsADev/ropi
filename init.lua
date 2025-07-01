@@ -422,7 +422,7 @@ function ropi.SetAssetPrice(collectibleID, price)
 		isFree = false
 	})
 
-	if success and response then
+	if success then
 		return true
 	else
 		return false, result
