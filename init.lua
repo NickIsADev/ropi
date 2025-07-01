@@ -156,7 +156,8 @@ local function Transaction(data)
                 game = data.details.place.universeId
             }) or nil
         },
-        price = data.currency.amount,
+        price = data.currency.amount / 0.7,
+		taxed = data.currency.amount,
         token = data.purchaseToken
     }
 end
