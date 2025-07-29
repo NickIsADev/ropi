@@ -90,7 +90,7 @@ local function User(data)
 		banned = not not data.isBanned,
 		created = fromISO(data.created),
 		profile = "https://roblox.com/users/" .. data.id .. "/profile",
-		hyperlink = "[" .. data.name .. "](https://roblox.com/users/" .. data.id .. "/profile)"
+		hyperlink = "[" .. data.name .. "](<https://roblox.com/users/" .. data.id .. "/profile>)"
 	}
 end
 
@@ -101,7 +101,7 @@ local function GroupUser(data)
 		id = data.userId,
 		verified = not not data.hasVerifiedBadge,
 		profile = "https://roblox.com/users/" .. data.userId .. "/profile",
-		hyperlink = "[" .. data.username .. "](https://roblox.com/users/" .. data.userId .. "/profile)"
+		hyperlink = "[" .. data.username .. "](<https://roblox.com/users/" .. data.userId .. "/profile>)"
 	}
 end
 
@@ -116,7 +116,7 @@ local function Group(data)
 		verified = not not data.hasVerifiedBadge,
 		public = not not data.publicEntryAllowed,
 		link = "https://www.roblox.com/communities/" .. data.id,
-		hyperlink = "[" .. data.name .. "](https://www.roblox.com/communities/" .. data.id .. ")"
+		hyperlink = "[" .. data.name .. "](<https://www.roblox.com/communities/" .. data.id .. ">)"
 	}
 end
 
