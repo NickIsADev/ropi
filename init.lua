@@ -1,5 +1,5 @@
 local http = require("coro-http")
-local json = require("json")
+local lunajson = require("lunajson")
 local timer = require("timer")
 
 local ropi = {
@@ -166,10 +166,10 @@ function ropi:request(api, method, endpoint, headers, body, retryCount, version)
 		})
 	end
 
-	body = (body and type(body) == "table" and json.encode(body)) or (type(body) == "string" and body) or nil
+	body = (body and type(body) == "table" and lunajson.encode(body)) or (type(body) == "string" and body) or nil
 
 	local result, response = http.request(method, url, headers, body)
-	response = (response and type(response) == "string" and json.decode(response)) or nil
+	response = (response and type(response) == "string" and lunajson.decode(response)) or nil
 
 	if result.code == 200 then
 		RETRY_AFTER = 2000
