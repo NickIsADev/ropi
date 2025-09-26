@@ -13,22 +13,27 @@ local ropi = {
 
 -- options
 
-local RETRY_AFTER = 2000
 local MAX_RETRIES = 3
 
 -- general utilities
 
 local function split(str, delim)
 	local ret = {}
-	if not str then return ret end
-	if not delim or delim == '' then
-		for c in string.gmatch(str, '.') do table.insert(ret, c) end
+	if not str then
+		return ret
+	end
+	if not delim or delim == "" then
+		for c in string.gmatch(str, ".") do
+			table.insert(ret, c)
+		end
 		return ret
 	end
 	local n = 1
 	while true do
 		local i, j = find(str, delim, n)
-		if not i then break end
+		if not i then
+			break
+		end
 		table.insert(ret, sub(str, n, i - 1))
 		n = j + 1
 	end
@@ -37,17 +42,25 @@ local function split(str, delim)
 end
 
 local function hasHeader(headers, name)
-	for _, header in pairs(headers) do if header[1]:lower() == name:lower() then return true end end
+	for _, header in pairs(headers) do
+		if header[1]:lower() == name:lower() then
+			return true
+		end
+	end
 
 	return false
 end
 
 local function fromISO(iso)
-	if not iso then return end
+	if not iso then
+		return
+	end
 
 	local year, month, day, hour, min, sec, ms = iso:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+).(%d+)Z")
 
-	if not year or not month or not day or not hour or not min or not sec or not ms then return end
+	if not year or not month or not day or not hour or not min or not sec or not ms then
+		return
+	end
 
 	local epoch = os.time({
 		year = tonumber(year),
@@ -67,7 +80,9 @@ end
 local function intoCache(item, category)
 	for i = #ropi.cache[category], 1, -1 do
 		local u = ropi.cache[category][i]
-		if u.id == item.id then table.remove(ropi.cache[category], i) end
+		if u.id == item.id then
+			table.remove(ropi.cache[category], i)
+		end
 	end
 
 	table.insert(ropi.cache[category], item)
@@ -75,7 +90,13 @@ local function intoCache(item, category)
 	return item
 end
 
-local function fromCache(query, category) for _, item in pairs(ropi.cache[category]) do if (type(query) == "string" and item.name:lower() == query:lower()) or (type(query) == "number" and item.id == query) then return item end end end
+local function fromCache(query, category)
+	for _, item in pairs(ropi.cache[category]) do
+		if (type(query) == "string" and item.name:lower() == query:lower()) or (type(query) == "number" and item.id == query) then
+			return item
+		end
+	end
+end
 
 -- objects
 
@@ -154,7 +175,9 @@ end
 function ropi:request(api, method, endpoint, headers, body, retryCount, version)
 	retryCount = retryCount or 0
 
-	if retryCount >= MAX_RETRIES then return false, Error(429, "The resource is being ratelimited.") end
+	if retryCount >= MAX_RETRIES then
+		return false, Error(429, "The resource is being ratelimited.")
+	end
 
 	local url = "https://" .. api .. ".roblox.com/" .. (version or "v1") .. "/" .. endpoint
 
@@ -172,12 +195,16 @@ function ropi:request(api, method, endpoint, headers, body, retryCount, version)
 	response = (response and type(response) == "string" and json.decode(response)) or nil
 
 	if result.code == 200 then
-		RETRY_AFTER = 2000
 		return true, response, result
 	elseif result.code == 429 then
-		print("[ROPI] | Retrying after " .. RETRY_AFTER .. "ms...")
-		timer.sleep(RETRY_AFTER)
-		RETRY_AFTER = RETRY_AFTER * 2
+		local retryAfter = 1000
+		for _, header in pairs(result) do
+			if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "retry-after" then
+				retryAfter = tonumber(header[2]) * 1000
+			end
+		end
+		print("[ROPI] | Ratelimited, retrying after " .. retryAfter .. "ms...")
+		timer.sleep(retryAfter)
 
 		return ropi:request(api, method, endpoint, headers, body, retryCount + 1, version)
 	else
@@ -201,18 +228,26 @@ function ropi.GetToken()
 		}
 	})
 
-	for _, header in pairs(result) do if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "x-csrf-token" then return true, header[2] end end
+	for _, header in pairs(result) do
+		if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "x-csrf-token" then
+			return true, header[2]
+		end
+	end
 
 	return false, Error(500, "A token was not provided by the server.")
 end
 
 function ropi.GetAvatarHeadShot(id, opts, refresh)
-	if type(id) ~= "string" and type(id) ~= "number" then return nil, Error(400, "An invalid ID was provided to GetAvatarHeadShot.") end
+	if type(id) ~= "string" and type(id) ~= "number" then
+		return nil, Error(400, "An invalid ID was provided to GetAvatarHeadShot.")
+	end
 
 	opts = opts or {}
 	id = tonumber(id) or 0
 
-	if (not refresh) and ropi.cache.avatars[id] then return ropi.cache.avatars[id] end
+	if (not refresh) and ropi.cache.avatars[id] then
+		return ropi.cache.avatars[id]
+	end
 
 	local options = {
 		size = opts.size or 720,
@@ -234,11 +269,15 @@ function ropi.GetAvatarHeadShot(id, opts, refresh)
 end
 
 function ropi.GetUser(id, refresh)
-	if type(id) ~= "string" and type(id) ~= "number" then return nil, Error(400, "An invalid ID was provided to GetUser.") end
+	if type(id) ~= "string" and type(id) ~= "number" then
+		return nil, Error(400, "An invalid ID was provided to GetUser.")
+	end
 
 	if not refresh then
 		local cached = fromCache(id, "users")
-		if cached then return cached end
+		if cached then
+			return cached
+		end
 	end
 
 	local success, user = ropi:request("users", "GET", "users/" .. id)
@@ -251,13 +290,19 @@ function ropi.GetUser(id, refresh)
 end
 
 function ropi.SearchUser(name, refresh)
-	if type(name) ~= "string" and type(id) ~= "number" then return nil, Error(400, "An invalid name/ID was provided to SearchUser.") end
+	if type(name) ~= "string" and type(id) ~= "number" then
+		return nil, Error(400, "An invalid name/ID was provided to SearchUser.")
+	end
 
-	if tonumber(name) then return ropi.GetUser(name, refresh) end
+	if tonumber(name) then
+		return ropi.GetUser(name, refresh)
+	end
 
 	if not refresh then
 		local cached = fromCache(name, "users")
-		if cached then return cached end
+		if cached then
+			return cached
+		end
 	end
 
 	local success, response = ropi:request("users", "POST", "usernames/users", nil, {
@@ -275,11 +320,15 @@ function ropi.SearchUser(name, refresh)
 end
 
 function ropi.GetGroup(id, refresh)
-	if type(id) ~= "string" and type(id) ~= "number" then return nil, Error(400, "An invalid ID was provided to GetGroup.") end
+	if type(id) ~= "string" and type(id) ~= "number" then
+		return nil, Error(400, "An invalid ID was provided to GetGroup.")
+	end
 
 	if not refresh then
 		local cached = fromCache(id, "groups")
-		if cached then return cached end
+		if cached then
+			return cached
+		end
 	end
 
 	local success, group = ropi:request("groups", "GET", "groups/" .. id)
@@ -300,7 +349,9 @@ function ropi.GetGroupMembers(id, full)
 		local success, response = ropi:request("groups", "GET", url)
 
 		if success and response then
-			for _, userdata in pairs(response.data or {}) do table.insert(members, (full and ropi.GetUser(userdata.user.userId)) or GroupUser(userdata.user)) end
+			for _, userdata in pairs(response.data or {}) do
+				table.insert(members, (full and ropi.GetUser(userdata.user.userId)) or GroupUser(userdata.user))
+			end
 
 			cursor = response.nextPageCursor
 		else
@@ -312,11 +363,15 @@ function ropi.GetGroupMembers(id, full)
 end
 
 function ropi.GetGroupTransactions(id, all)
-	if not ropi.cookie then return nil, Error(400, ".ROBLOSECURITY cookie has not yet been set.") end
+	if not ropi.cookie then
+		return nil, Error(400, ".ROBLOSECURITY cookie has not yet been set.")
+	end
 
 	local success, token = ropi.GetToken()
 
-	if not success then return token end
+	if not success then
+		return token
+	end
 
 	local transactions = {}
 	local cursor = nil
@@ -335,7 +390,9 @@ function ropi.GetGroupTransactions(id, all)
 		}, nil, nil, "v2")
 
 		if success and response then
-			for _, transactionData in pairs(response.data or {}) do table.insert(transactions, Transaction(transactionData)) end
+			for _, transactionData in pairs(response.data or {}) do
+				table.insert(transactions, Transaction(transactionData))
+			end
 
 			cursor = response.nextPageCursor
 		else
@@ -343,17 +400,23 @@ function ropi.GetGroupTransactions(id, all)
 		end
 	until (not cursor) or (not all)
 
-	table.sort(transactions, function(a, b) return a.created > b.created end)
+	table.sort(transactions, function(a, b)
+		return a.created > b.created
+	end)
 
 	return transactions
 end
 
 function ropi.SetAssetPrice(collectibleID, price)
-	if not ropi.cookie then return nil, Error(400, ".ROBLOSECURITY cookie has not yet been set.") end
+	if not ropi.cookie then
+		return nil, Error(400, ".ROBLOSECURITY cookie has not yet been set.")
+	end
 
 	local success, token = ropi.GetToken()
 
-	if not success then return token end
+	if not success then
+		return token
+	end
 
 	if (not collectibleID) or type(collectibleID) ~= "string" then
 		return nil, Error(400, "Collectible ID was not provided as a string.")
