@@ -174,7 +174,8 @@ end
 -- request handler
 
 function ropi:request(api, method, endpoint, headers, body, retryCount, version)
-	if hold then repeat timer.sleep(100) until not hold end
+	while ropi.hold	do timer.sleep(100) end
+
 	retryCount = retryCount or 0
 
 	if retryCount >= MAX_RETRIES then
@@ -193,7 +194,7 @@ function ropi:request(api, method, endpoint, headers, body, retryCount, version)
 
 	body = (body and type(body) == "table" and json.encode(body)) or (type(body) == "string" and body) or nil
 
-	local success, result, response = pcall(http.request, method, url, headers, body)
+	local success, result, response = pcall(http.request, method, url, headers, body, {timeout = 5000})
 	response = (response and type(response) == "string" and json.decode(response)) or nil
 
 	if result.code == 200 then
@@ -206,9 +207,9 @@ function ropi:request(api, method, endpoint, headers, body, retryCount, version)
 			end
 		end
 		print("[ROPI] | Ratelimited, retrying after " .. retryAfter .. "ms...")
-		hold = true
+		ropi.hold = true
 		timer.sleep(retryAfter)
-		hold = false
+		ropi.hold = false
 
 		return ropi:request(api, method, endpoint, headers, body, retryCount + 1, version)
 	elseif not success then
