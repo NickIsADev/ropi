@@ -193,7 +193,7 @@ function ropi:request(api, method, endpoint, headers, body, retryCount, version)
 
 	body = (body and type(body) == "table" and json.encode(body)) or (type(body) == "string" and body) or nil
 
-	local result, response = http.request(method, url, headers, body)
+	local success, result, response = pcall(http.request, method, url, headers, body)
 	response = (response and type(response) == "string" and json.decode(response)) or nil
 
 	if result.code == 200 then
@@ -211,6 +211,8 @@ function ropi:request(api, method, endpoint, headers, body, retryCount, version)
 		hold = false
 
 		return ropi:request(api, method, endpoint, headers, body, retryCount + 1, version)
+	elseif not success then
+		return false, Error({500, "An unknown error occurred."}), result
 	else
 		return false, Error(result.code, result.reason), result
 	end
