@@ -41,14 +41,12 @@ local function split(str, delim)
 	return ret
 end
 
-local function hasHeader(headers, name)
-	for _, header in pairs(headers) do
-		if header[1]:lower() == name:lower() then
-			return true
+local function header(headers, name)
+	for _, h in pairs(headers) do
+		if h[1]:lower() == name:lower() then
+			return h[2]
 		end
 	end
-
-	return false
 end
 
 local function fromISO(iso)
@@ -216,44 +214,42 @@ function ropi:dump()
 			ropi.ActiveBuckets[bucket] = true
 
 			coroutine.wrap(function()
-				if list[1] then
-					table.sort(list, function(a, b)
-						return a.timestamp < b.timestamp
-					end)
+				table.sort(list, function(a, b)
+					return a.timestamp < b.timestamp
+				end)
 
-					local state = ropi.Ratelimits[bucket]
-					local oldest = list[1]
+				local state = ropi.Ratelimits[bucket]
+				local oldest = list[1]
 
-					if oldest and (not state or not state.updated or not state.retry or now >= (state.updated + state.retry)) then
-						local req = oldest
-						local ok, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, nil, req.version)
+				if oldest and (not state or not state.updated or not state.retry or now >= (state.updated + state.retry)) then
+					local req = oldest
+					local ok, result, response = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, nil, req.version)
 
-						-- result = header table from coro-http
-						local retryAfter
-						for _, header in pairs(result or {}) do
-							if type(header) == "table" and header[1]:lower() == "retry-after" then
-								retryAfter = tonumber(header[2])
-								break
-							end
+					local headers = result or {}
+					local retryAfter = header(headers, "Retry-After")
+					local remaining = header(headers, "X-RateLimit-Remaining")
+					local reset = header(headers, "X-RateLimit-Reset")
+
+					ropi.Ratelimits[bucket] = {
+						updated = realtime(),
+						retry = retryAfter and tonumber(retryAfter),
+						remaining = remaining and tonumber(remaining),
+						reset = reset and tonumber(reset)
+					}
+
+					if not ok and result.code == 429 then
+						print("[ROPI] | The " .. (bucket or "unknown") .. " bucket was ratelimited, requeueing.")
+						return
+					else
+						print("[ROPI] | Request " .. req.method .. " /" .. req.endpoint .. " fulfilled.")
+						table.remove(list, 1)
+						if #list == 0 then
+							ropi.Requests[bucket] = nil
 						end
-
-						ropi.Ratelimits[bucket] = {
-							updated = realtime(),
-							retry = retryAfter
-						}
-
-						if not ok and result.code == 429 then
-							print("[ROPI] | Bucket " .. (bucket or "unknown") .. " was ratelimited, requeueing for " .. (retryAfter or 1) .. "s.")
-							-- leave req in place, don’t remove
-						else
-							print("[ROPI] | Request " .. req.method .. " /" .. req.endpoint .. " fulfilled.")
-							table.remove(list, 1)
-							if #list == 0 then
-								ropi.Requests[bucket] = nil
-							end
-							safeResume(req.co, ok, response, result)
-						end
+						safeResume(req.co, ok, response, result)
 					end
+				else
+					return
 				end
 
 				ropi.ActiveBuckets[bucket] = nil
@@ -266,7 +262,7 @@ function ropi:request(api, method, endpoint, headers, body, _, version)
 	local url = "https://" .. api .. ".roblox.com/" .. (version or "v1") .. "/" .. endpoint
 
 	headers = type(headers) == "table" and headers or {}
-	if not hasHeader(headers, "Content-Type") then
+	if not header(headers, "Content-Type") then
 		table.insert(headers, {
 			"Content-Type",
 			"application/json"
