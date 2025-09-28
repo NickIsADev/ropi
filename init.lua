@@ -43,7 +43,7 @@ end
 
 local function header(headers, name)
 	for _, h in pairs(headers) do
-		if h[1] and h[2] and h[1]:lower() == name:lower() then
+		if h and type(h) == "table" and h[1] and h[2] and h[1]:lower() == name:lower() then
 			return h[2]
 		end
 	end
