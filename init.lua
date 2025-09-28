@@ -82,8 +82,12 @@ local function realtime()
 end
 
 local function safeResume(co, ...)
-	if type(co) ~= "thread" then return false, "Invalid coroutine" end
-	if coroutine.status(co) ~= "suspended" then return false, "Coroutine not suspended" end
+	if type(co) ~= "thread" then
+		return false, "Invalid coroutine"
+	end
+	if coroutine.status(co) ~= "suspended" then
+		return false, "Coroutine not suspended"
+	end
 
 	local ok, result = coroutine.resume(co, ...)
 	if not ok then
@@ -229,12 +233,12 @@ function ropi:dump()
 									retryAfter = tonumber(header[2])
 								end
 							end
-							
+
 							print("[ROPI] | The " .. (bucket or "unknown") .. " bucket was ratelimited, requeueing for " .. retryAfter .. "s.")
 
 							ropi.Ratelimits[bucket] = {
 								updated = realtime(),
-								retry = retryAfter,
+								retry = retryAfter
 							}
 						else
 							table.remove(list, 1)
@@ -265,7 +269,9 @@ function ropi:request(api, method, endpoint, headers, body, _, version)
 
 	body = (body and type(body) == "table" and json.encode(body)) or (type(body) == "string" and body) or nil
 
-	local success, result, response = pcall(http.request, method, url, headers, body, {timeout = 5000})
+	local success, result, response = pcall(http.request, method, url, headers, body, {
+		timeout = 5000
+	})
 	response = (response and type(response) == "string" and json.decode(response)) or nil
 
 	if not success then
