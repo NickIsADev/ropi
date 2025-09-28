@@ -207,6 +207,8 @@ function ropi:queue(request)
 end
 
 function ropi:dump()
+	print("[ROPI] | Scanning queue for runnable requests...")
+
 	local now = realtime()
 
 	for bucket, list in pairs(ropi.Requests) do
@@ -226,21 +228,25 @@ function ropi:dump()
 						local req = oldest
 						local ok, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, nil, req.version)
 
-						if not ok and result.code == 429 then
-							local retryAfter = 1
-							for _, header in pairs(result) do
-								if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "retry-after" then
-									retryAfter = tonumber(header[2])
-								end
+						-- result = header table from coro-http
+						local retryAfter
+						for _, header in pairs(result or {}) do
+							if type(header) == "table" and header[1]:lower() == "retry-after" then
+								retryAfter = tonumber(header[2])
+								break
 							end
+						end
 
-							print("[ROPI] | The " .. (bucket or "unknown") .. " bucket was ratelimited, requeueing for " .. retryAfter .. "s.")
+						ropi.Ratelimits[bucket] = {
+							updated = realtime(),
+							retry = retryAfter
+						}
 
-							ropi.Ratelimits[bucket] = {
-								updated = realtime(),
-								retry = retryAfter
-							}
+						if not ok and result.code == 429 then
+							print("[ROPI] | Bucket " .. (bucket or "unknown") .. " was ratelimited, requeueing for " .. (retryAfter or 1) .. "s.")
+							-- leave req in place, don’t remove
 						else
+							print("[ROPI] | Request " .. req.method .. " /" .. req.endpoint .. " fulfilled.")
 							table.remove(list, 1)
 							if #list == 0 then
 								ropi.Requests[bucket] = nil
