@@ -8,8 +8,7 @@ local ropi = {
 		avatars = {},
 		groups = {}
 	},
-	cookie = nil,
-	hold = false
+	cookie = nil
 }
 
 -- options
@@ -174,7 +173,6 @@ end
 -- request handler
 
 function ropi:request(api, method, endpoint, headers, body, retryCount, version)
-	if hold then repeat timer.sleep(100) until not hold end
 	retryCount = retryCount or 0
 
 	if retryCount >= MAX_RETRIES then
@@ -206,9 +204,7 @@ function ropi:request(api, method, endpoint, headers, body, retryCount, version)
 			end
 		end
 		print("[ROPI] | Ratelimited, retrying after " .. retryAfter .. "ms...")
-		hold = true
 		timer.sleep(retryAfter)
-		hold = false
 
 		return ropi:request(api, method, endpoint, headers, body, retryCount + 1, version)
 	else
