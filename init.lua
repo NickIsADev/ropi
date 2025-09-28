@@ -280,16 +280,6 @@ function ropi:request(api, method, endpoint, headers, body, _, version)
 	end
 end
 
-coroutine.wrap(function()
-	while true do
-		if #ropi.Requests > 0 then
-			ropi:dump()
-		end
-
-		timer.sleep(5)
-	end
-end)()
-
 -- api functions
 
 function ropi.SetCookie(token)
@@ -572,5 +562,12 @@ function ropi.SetAssetPrice(collectibleID, price)
 		return false, result
 	end
 end
+
+local dumpTimer = uv.new_timer()
+uv.timer_start(dumpTimer, 0, 100, function()
+	if next(ropi.Requests) then
+		ropi:dump()
+	end
+end)
 
 return ropi
