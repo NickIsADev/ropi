@@ -1,6 +1,7 @@
 local http = require("coro-http")
 local json = require("json")
 local timer = require("timer")
+local uv = require("uv")
 
 local ropi = {
 	cache = {
@@ -9,12 +10,10 @@ local ropi = {
 		groups = {}
 	},
 	cookie = nil,
-	hold = false
+	Requests = {},
+	Ratelimits = {},
+	ActiveBuckets = {}
 }
-
--- options
-
-local MAX_RETRIES = 3
 
 -- general utilities
 
@@ -74,6 +73,23 @@ local function fromISO(iso)
 	})
 
 	return epoch + (tonumber(ms) / 1000)
+end
+
+local function realtime()
+	local seconds, microseconds = uv.gettimeofday()
+
+	return seconds + (microseconds / 1000000)
+end
+
+local function safeResume(co, ...)
+	if type(co) ~= "thread" then return false, "Invalid coroutine" end
+	if coroutine.status(co) ~= "suspended" then return false, "Coroutine not suspended" end
+
+	local ok, result = coroutine.resume(co, ...)
+	if not ok then
+		return false, result
+	end
+	return true, result
 end
 
 -- cache utilities
@@ -173,15 +189,70 @@ end
 
 -- request handler
 
-function ropi:request(api, method, endpoint, headers, body, retryCount, version)
-	while ropi.hold	do timer.sleep(100) end
+function ropi:queue(request)
+	request.timestamp = os.time()
+	request.co = coroutine.running()
+	assert(request.co, "ropi:queue must be called from inside a coroutine")
 
-	retryCount = retryCount or 0
+	local b = request.api
 
-	if retryCount >= MAX_RETRIES then
-		return false, Error(429, "The resource is being ratelimited.")
+	ropi.Requests[b] = ropi.Requests[b] or {}
+	table.insert(ropi.Requests[b], request)
+
+	return coroutine.yield()
+end
+
+function ropi:dump()
+	local now = realtime()
+
+	for bucket, list in pairs(ropi.Requests) do
+		if not ropi.ActiveBuckets[bucket] then
+			ropi.ActiveBuckets[bucket] = true
+
+			coroutine.wrap(function()
+				if list[1] then
+					table.sort(list, function(a, b)
+						return a.timestamp < b.timestamp
+					end)
+
+					local state = ropi.Ratelimits[bucket]
+					local oldest = list[1]
+
+					if oldest and (not state or not state.updated or not state.retry or now >= (state.updated + state.retry)) then
+						local req = oldest
+						local ok, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, nil, req.version)
+
+						if not ok and result.code == 429 then
+							local retryAfter = 1
+							for _, header in pairs(result) do
+								if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "retry-after" then
+									retryAfter = tonumber(header[2])
+								end
+							end
+							
+							print("[ROPI] | The " .. (bucket or "unknown") .. " bucket was ratelimited, requeueing for " .. retryAfter .. "s.")
+
+							ropi.Ratelimits[bucket] = {
+								updated = realtime(),
+								retry = retryAfter,
+							}
+						else
+							table.remove(list, 1)
+							if #list == 0 then
+								ropi.Requests[bucket] = nil
+							end
+							safeResume(req.co, ok, response, result)
+						end
+					end
+				end
+
+				ropi.ActiveBuckets[bucket] = nil
+			end)()
+		end
 	end
+end
 
+function ropi:request(api, method, endpoint, headers, body, _, version)
 	local url = "https://" .. api .. ".roblox.com/" .. (version or "v1") .. "/" .. endpoint
 
 	headers = type(headers) == "table" and headers or {}
@@ -197,25 +268,15 @@ function ropi:request(api, method, endpoint, headers, body, retryCount, version)
 	local success, result, response = pcall(http.request, method, url, headers, body, {timeout = 5000})
 	response = (response and type(response) == "string" and json.decode(response)) or nil
 
+	if not success then
+		return false, Error(500, "An unknown error occurred."), result
+	end
+
 	if result.code == 200 then
 		return true, response, result
-	elseif result.code == 429 then
-		local retryAfter = 1000
-		for _, header in pairs(result) do
-			if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "retry-after" then
-				retryAfter = tonumber(header[2]) * 1000
-			end
-		end
-		print("[ROPI] | Ratelimited, retrying after " .. retryAfter .. "ms...")
-		ropi.hold = true
-		timer.sleep(retryAfter)
-		ropi.hold = false
-
-		return ropi:request(api, method, endpoint, headers, body, retryCount + 1, version)
-	elseif not success then
-		return false, Error({500, "An unknown error occurred."}), result
 	else
-		return false, Error(result.code, result.reason), result
+		local err = (response and response.errors and response.errors[1] and Error(response.errors[1].code, response.errors[1].message)) or Error(result.code, result.reason)
+		return false, err, result
 	end
 end
 
@@ -228,12 +289,21 @@ function ropi.SetCookie(token)
 end
 
 function ropi.GetToken()
-	local _, _, result = ropi:request("itemconfiguration", "PATCH", "collectibles/xcsrftoken", {
-		{
-			"Cookie",
-			ropi.cookie
+	local success, response, result = ropi:queue({
+		api = "itemconfiguration",
+		method = "PATCH",
+		endpoint = "collectibles/xcsrftoken",
+		headers = {
+			{
+				"Cookie",
+				ropi.cookie
+			}
 		}
 	})
+
+	if not success then
+		return false, response
+	end
 
 	for _, header in pairs(result) do
 		if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "x-csrf-token" then
@@ -262,7 +332,11 @@ function ropi.GetAvatarHeadShot(id, opts, refresh)
 		isCircular = not not opts.isCircular
 	}
 
-	local success, response = ropi:request("thumbnails", "GET", "users/avatar-headshot?userIds=" .. id .. "&size=" .. options.size .. "x" .. options.size .. "&format=Png&isCircular=" .. tostring(options.isCircular))
+	local success, response = ropi:queue({
+		api = "thumbnails",
+		method = "GET",
+		endpoint = "users/avatar-headshot?userIds=" .. id .. "&size=" .. options.size .. "x" .. options.size .. "&format=Png&isCircular=" .. tostring(options.isCircular)
+	})
 
 	if success and response and response.data then
 		if response.data[1] and response.data[1].state == "Completed" and response.data[1].imageUrl then
@@ -287,7 +361,11 @@ function ropi.GetUser(id, refresh)
 		end
 	end
 
-	local success, user = ropi:request("users", "GET", "users/" .. id)
+	local success, user = ropi:queue({
+		api = "users",
+		method = "GET",
+		endpoint = "users/" .. id
+	})
 
 	if success and user and user.name and user.displayName and user.id then
 		return intoCache(User(user), "users")
@@ -312,11 +390,16 @@ function ropi.SearchUser(name, refresh)
 		end
 	end
 
-	local success, response = ropi:request("users", "POST", "usernames/users", nil, {
-		usernames = {
-			name
-		},
-		excludeBannedUsers = true
+	local success, response = ropi:queue({
+		api = "users",
+		method = "POST",
+		endpoint = "usernames/users",
+		body = {
+			usernames = {
+				name
+			},
+			excludeBannedUsers = true
+		}
 	})
 
 	if success and response.data and response.data[1] and response.data[1].name and response.data[1].name:lower() == name:lower() and response.data[1].displayName and response.data[1].id then
@@ -338,7 +421,11 @@ function ropi.GetGroup(id, refresh)
 		end
 	end
 
-	local success, group = ropi:request("groups", "GET", "groups/" .. id)
+	local success, group = ropi:queue({
+		api = "groups",
+		method = "GET",
+		endpoint = "groups/" .. id
+	})
 
 	if success and group and group.name and group.id then
 		return intoCache(Group(group), "groups")
@@ -353,7 +440,11 @@ function ropi.GetGroupMembers(id, full)
 
 	repeat
 		local url = "groups/" .. id .. "/users?limit=100" .. ((cursor and "&cursor=" .. cursor) or "")
-		local success, response = ropi:request("groups", "GET", url)
+		local success, response = ropi:queue({
+			api = "groups",
+			method = "GET",
+			endpoint = url
+		})
 
 		if success and response then
 			for _, userdata in pairs(response.data or {}) do
@@ -385,16 +476,22 @@ function ropi.GetGroupTransactions(id, all)
 
 	repeat
 		local url = "groups/" .. id .. "/transactions?limit=100&transactionType=Sale" .. ((cursor and "&cursor=" .. cursor) or "")
-		local success, response, result = ropi:request("economy", "GET", url, {
-			{
-				"Cookie",
-				ropi.cookie
+		local success, response, result = ropi:queue({
+			api = "economy",
+			method = "GET",
+			endpoint = url,
+			headers = {
+				{
+					"Cookie",
+					ropi.cookie
+				},
+				{
+					"X-Csrf-Token",
+					token
+				}
 			},
-			{
-				"X-Csrf-Token",
-				token
-			}
-		}, nil, nil, "v2")
+			version = "v2"
+		})
 
 		if success and response then
 			for _, transactionData in pairs(response.data or {}) do
@@ -431,26 +528,32 @@ function ropi.SetAssetPrice(collectibleID, price)
 		return nil, Error(400, "A malformed collectible ID was provided.")
 	end
 
-	local success, response, result = ropi:request("itemconfiguration", "PATCH", "collectibles/" .. collectibleID, {
-		{
-			"Cookie",
-			ropi.cookie
+	local success, response, result = ropi:queue({
+		api = "itemconfiguration",
+		method = "PATCH",
+		endpoint = "collectibles/" .. collectibleID,
+		headers = {
+			{
+				"Cookie",
+				ropi.cookie
+			},
+			{
+				"X-Csrf-Token",
+				token
+			}
 		},
-		{
-			"X-Csrf-Token",
-			token
+		body = {
+			saleLocationConfiguration = {
+				saleLocationType = 1,
+				places = {}
+			},
+			saleStatus = 0,
+			quantityLimitPerUser = 0,
+			resaleRestriction = 2,
+			priceInRobux = price,
+			priceOffset = 0,
+			isFree = false
 		}
-	}, {
-		saleLocationConfiguration = {
-			saleLocationType = 1,
-			places = {}
-		},
-		saleStatus = 0,
-		quantityLimitPerUser = 0,
-		resaleRestriction = 2,
-		priceInRobux = price,
-		priceOffset = 0,
-		isFree = false
 	})
 
 	if success then
@@ -459,5 +562,12 @@ function ropi.SetAssetPrice(collectibleID, price)
 		return false, result
 	end
 end
+
+local dumpTimer = uv.new_timer()
+uv.timer_start(dumpTimer, 0, 100, function()
+	if next(ropi.Requests) then
+		ropi:dump()
+	end
+end)
 
 return ropi
