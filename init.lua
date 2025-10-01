@@ -225,7 +225,7 @@ function ropi:dump()
 
 					if oldest and (not state or not state.updated or not state.retry or now >= (state.updated + state.retry)) then
 						local req = oldest
-						local ok, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, nil, req.version)
+						local ok, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, nil, req.version, req.proxy)
 
 						if not ok and result.code == 429 then
 							local retryAfter = 1
@@ -257,9 +257,9 @@ function ropi:dump()
 	end
 end
 
-function ropi:request(api, method, endpoint, headers, body, _, version)
-	local url = "https://" .. api .. ".roblox.com/" .. (version or "v1") .. "/" .. endpoint
-
+function ropi:request(api, method, endpoint, headers, body, _, version, proxy)
+	local domain = (proxy and "rotunnel.com") or "roblox.com"
+	local url = "https://" .. api .. "." .. domain .. "/" .. (version or "v1") .. "/" .. endpoint
 	headers = type(headers) == "table" and headers or {}
 	if not hasHeader(headers, "Content-Type") then
 		table.insert(headers, {
@@ -340,6 +340,7 @@ function ropi.GetAvatarHeadShot(id, opts, refresh)
 	local success, response = ropi:queue({
 		api = "thumbnails",
 		method = "GET",
+		proxy = true,
 		endpoint = "users/avatar-headshot?userIds=" .. id .. "&size=" .. options.size .. "x" .. options.size .. "&format=Png&isCircular=" .. tostring(options.isCircular)
 	})
 
@@ -369,6 +370,7 @@ function ropi.GetUser(id, refresh)
 	local success, user = ropi:queue({
 		api = "users",
 		method = "GET",
+		proxy = true,
 		endpoint = "users/" .. id
 	})
 
@@ -398,6 +400,7 @@ function ropi.SearchUser(name, refresh)
 	local success, response = ropi:queue({
 		api = "users",
 		method = "POST",
+		proxy = true,
 		endpoint = "usernames/users",
 		body = {
 			usernames = {
@@ -429,6 +432,7 @@ function ropi.GetGroup(id, refresh)
 	local success, group = ropi:queue({
 		api = "groups",
 		method = "GET",
+		proxy = true,
 		endpoint = "groups/" .. id
 	})
 
@@ -448,6 +452,7 @@ function ropi.GetGroupMembers(id, full)
 		local success, response = ropi:queue({
 			api = "groups",
 			method = "GET",
+			proxy = true,
 			endpoint = url
 		})
 
