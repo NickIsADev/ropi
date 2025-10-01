@@ -191,8 +191,13 @@ end
 
 function ropi:queue(request)
 	request.timestamp = os.time()
-	request.co = coroutine.running()
-	assert(request.co, "ropi:queue must be called from inside a coroutine")
+
+	local co, main = coroutine.running()
+	if not co or main or not coroutine.isyieldable(co) then
+		return "ropi:queue must be called from inside a yieldable coroutine"
+	end
+
+	request.co = co
 
 	local b = request.api
 
