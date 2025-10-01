@@ -123,7 +123,7 @@ local function User(data)
 		displayName = data.displayName,
 		id = data.id,
 		description = data.description,
-		avatar = ropi.GetAvatarHeadShot(data.id),
+		avatar = ropi.GetAvatarHeadShot(data.id) or "https://duckybot.xyz/images/icons/RobloxConfused.png",
 		verified = not not data.hasVerifiedBadge,
 		banned = not not data.isBanned,
 		created = fromISO(data.created),
