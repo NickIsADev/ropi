@@ -258,7 +258,7 @@ function ropi:dump()
 end
 
 function ropi:request(api, method, endpoint, headers, body, _, version, proxy)
-	local domain = (proxy and "rotunnel.com") or "roblox.com"
+	local domain = (proxy and "RoProxy.com") or "roblox.com"
 	local url = "https://" .. api .. "." .. domain .. "/" .. (version or "v1") .. "/" .. endpoint
 	headers = type(headers) == "table" and headers or {}
 	if not hasHeader(headers, "Content-Type") then
