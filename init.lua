@@ -27,15 +27,21 @@ local ropi = {
 			end
 		},
 		{
-			name = "rotunnel",
-			parse = function(api)
-				return api .. ".rotunnel.com"
-			end
-		},
-		{
 			name = "ropiproxy",
 			parse = function(api)
 				return "ropiproxy.vercel.app/" .. api
+			end
+		},
+		{
+			name = "ropiproxytwo",
+			parse = function(api)
+				return "ropiproxytwo.vercel.app/" .. api
+			end
+		},
+			{
+			name = "ropiproxythree",
+			parse = function(api)
+				return "ropiproxythree.vercel.app/" .. api
 			end
 		},
 	}
@@ -464,7 +470,7 @@ function ropi.SearchUser(name, refresh)
 	local success, response = ropi:queue({
 		api = "users",
 		method = "POST",
-		domains = {"roblox", "RoProxy", "ropiproxy"},
+		domains = {"roblox", "RoProxy", "ropiproxy", "ropiproxytwo", "ropiproxythree"},
 		endpoint = "usernames/users",
 		body = {
 			usernames = {
