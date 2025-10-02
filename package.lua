@@ -1,7 +1,7 @@
 return {
     name = "NickIsADev/ropi",
     description = "A simple Roblox API wrapper to fetch user information.",
-    version = "1.0.4",
+    version = "1.1.0",
     dependencies = {
         "luvit/json",
         "luvit/timer",

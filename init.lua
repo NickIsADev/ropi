@@ -114,8 +114,12 @@ local function realtime()
 end
 
 local function safeResume(co, ...)
-	if type(co) ~= "thread" then return false, "Invalid coroutine" end
-	if coroutine.status(co) ~= "suspended" then return false, "Coroutine not suspended" end
+	if type(co) ~= "thread" then
+		return false, "Invalid coroutine"
+	end
+	if coroutine.status(co) ~= "suspended" then
+		return false, "Coroutine not suspended"
+	end
 
 	local ok, result = coroutine.resume(co, ...)
 	if not ok then
@@ -320,6 +324,10 @@ function ropi:dump()
 						end
 						safeResume(req.co, ok, response, result)
 					end
+				end)
+
+				if not success then
+					print("[ROPI] | An error occurred while attempting to dump the " .. (bucket or "unknown") .. " bucket: " .. tostring(err))
 				end
 
 				ropi.ActiveBuckets[bucket] = nil
@@ -340,7 +348,9 @@ function ropi:request(api, method, endpoint, headers, body, domain, version)
 
 	body = (body and type(body) == "table" and json.encode(body)) or (type(body) == "string" and body) or nil
 
-	local success, result, response = pcall(http.request, method, url, headers, body, {timeout = 5000})
+	local success, result, response = pcall(http.request, method, url, headers, body, {
+		timeout = 5000
+	})
 	response = (response and type(response) == "string" and json.decode(response)) or nil
 
 	if not success then
