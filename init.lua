@@ -679,3 +679,5 @@ uv.timer_start(dumpTimer, 0, 100, function()
 		ropi:dump()
 	end
 end)
+
+return ropi
