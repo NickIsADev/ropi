@@ -336,7 +336,7 @@ function ropi:request(api, method, endpoint, headers, body, domain, version)
 	local debugInfo
     for i = 1, 10 do
         debugInfo = debug.getinfo(i, "Sl")
-        if (debugInfo) and (not debugInfo.short_src:lower():find("discordia")) and (debugInfo.what ~= "C") then
+        if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
             break
         end
     end
