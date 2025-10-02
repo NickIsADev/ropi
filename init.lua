@@ -145,7 +145,7 @@ end
 
 local function fromCache(query, category)
 	for _, item in pairs(ropi.cache[category]) do
-		if (type(query) == "string" and item.name:lower() == query:lower()) or (type(query) == "number" and item.id == query) then
+		if (type(query) == "string" and item.name:lower() == query:lower()) or (tonumber(query) and tonumber(item.id) == tonumber(query)) then
 			return item
 		end
 	end
