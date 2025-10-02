@@ -333,18 +333,7 @@ function ropi:dump()
 end
 
 function ropi:request(api, method, endpoint, headers, body, domain, version)
-	local debugInfo
-    for i = 1, 10 do
-        debugInfo = debug.getinfo(i, "Sl")
-        if (debugInfo) and (debugInfo.what ~= "C") then
-            break
-        end
-    end
-	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
-
 	local url = "https://" .. domain.parse(api) .. "/" .. (version or "v1") .. "/" .. endpoint
-
-	print("[ROPI] | " .. method .. " " .. url .. " : " .. (origin or "unknown"))
 
 	headers = type(headers) == "table" and headers or {}
 	if not hasHeader(headers, "Content-Type") then
