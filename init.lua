@@ -12,7 +12,33 @@ local ropi = {
 	cookie = nil,
 	Requests = {},
 	Ratelimits = {},
-	ActiveBuckets = {}
+	ActiveBuckets = {},
+	Domains = {
+		{
+			name = "roblox",
+			parse = function(api)
+				return api .. ".roblox.com"
+			end
+		},
+		{
+			name = "RoProxy", 
+			parse = function(api)
+				return api .. ".RoProxy.com"
+			end
+		},
+		{
+			name = "rotunnel",
+			parse = function(api)
+				return api .. ".rotunnel.com"
+			end
+		},
+		{
+			name = "ropiproxy",
+			parse = function(api)
+				return "ropiproxy.vercel.app/" .. api
+			end
+		},
+	}
 }
 
 -- general utilities
@@ -211,43 +237,82 @@ function ropi:dump()
 	local now = realtime()
 
 	for bucket, list in pairs(ropi.Requests) do
-		if not ropi.ActiveBuckets[bucket] then
+		if not ropi.ActiveBuckets[bucket] and #list > 0 then
 			ropi.ActiveBuckets[bucket] = true
 
 			coroutine.wrap(function()
-				if list[1] then
-					table.sort(list, function(a, b)
-						return a.timestamp < b.timestamp
-					end)
+				table.sort(list, function(a, b)
+					return a.timestamp < b.timestamp
+				end)
 
-					local state = ropi.Ratelimits[bucket]
-					local oldest = list[1]
+				local req = list[1]
+				if not req then
+					ropi.ActiveBuckets[bucket] = nil
+					return
+				end
 
-					if oldest and (not state or not state.updated or not state.retry or now >= (state.updated + state.retry)) then
-						local req = oldest
-						local ok, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, nil, req.version, req.proxy)
-
-						if not ok and result.code == 429 then
-							local retryAfter = 1
-							for _, header in pairs(result) do
-								if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "retry-after" then
-									retryAfter = tonumber(header[2])
-								end
+				local domainsToTry = {}
+				if req.domains == true or req.domains == nil then
+					domainsToTry = ropi.Domains
+				elseif type(req.domains) == "table" then
+					for _, domainName in ipairs(req.domains) do
+						for _, domainDef in ipairs(ropi.Domains) do
+							if domainDef.name == domainName then
+								table.insert(domainsToTry, domainDef)
+								break
 							end
-							
-							print("[ROPI] | The " .. (bucket or "unknown") .. " bucket was ratelimited, requeueing for " .. retryAfter .. "s.")
-
-							ropi.Ratelimits[bucket] = {
-								updated = realtime(),
-								retry = retryAfter,
-							}
-						else
-							table.remove(list, 1)
-							if #list == 0 then
-								ropi.Requests[bucket] = nil
-							end
-							safeResume(req.co, ok, response, result)
 						end
+					end
+				end
+
+				if #domainsToTry == 0 then
+					domainsToTry = ropi.Domains
+				end
+
+				ropi.Ratelimits[bucket] = ropi.Ratelimits[bucket] or {}
+				local bucket_ratelimits = ropi.Ratelimits[bucket]
+				bucket_ratelimits.lastDomainIndex = bucket_ratelimits.lastDomainIndex or 0
+
+				local chosenDomain = nil
+				if #domainsToTry > 0 then
+					local start_index = bucket_ratelimits.lastDomainIndex % #domainsToTry + 1
+
+					for i = 1, #domainsToTry do
+						local index = (start_index + i - 2) % #domainsToTry + 1
+						local domain = domainsToTry[index]
+						local domain_ratelimit = bucket_ratelimits[domain.name]
+
+						if not domain_ratelimit or not domain_ratelimit.retry or now >= (domain_ratelimit.updated + domain_ratelimit.retry) then
+							chosenDomain = domain
+							bucket_ratelimits.lastDomainIndex = index
+							break
+						end
+					end
+				end
+
+				if chosenDomain then
+					local ok, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, chosenDomain, req.version)
+
+					if not ok and result.code == 429 then
+						local retryAfter = 1
+						for _, header in pairs(result) do
+							if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "retry-after" then
+								retryAfter = tonumber(header[2]) or 1
+							end
+						end
+
+						print("[ROPI] | The " .. (bucket or "unknown") .. " bucket on domain " .. chosenDomain.name .. " was ratelimited, requeueing for " .. retryAfter .. "s.")
+
+						bucket_ratelimits[chosenDomain.name] = {
+							updated = realtime(),
+							retry = retryAfter,
+						}
+					else
+						table.remove(list, 1)
+						if #list == 0 then
+							ropi.Requests[bucket] = nil
+						end
+						safeResume(req.co, ok, response, result)
 					end
 				end
 
@@ -257,9 +322,8 @@ function ropi:dump()
 	end
 end
 
-function ropi:request(api, method, endpoint, headers, body, _, version, proxy)
-	local domain = (proxy and "RoProxy.com") or "roblox.com"
-	local url = "https://" .. api .. "." .. domain .. "/" .. (version or "v1") .. "/" .. endpoint
+function ropi:request(api, method, endpoint, headers, body, domain, version)
+	local url = "https://" .. domain.parse(api) .. "/" .. (version or "v1") .. "/" .. endpoint
 	headers = type(headers) == "table" and headers or {}
 	if not hasHeader(headers, "Content-Type") then
 		table.insert(headers, {
@@ -370,7 +434,7 @@ function ropi.GetUser(id, refresh)
 	local success, user = ropi:queue({
 		api = "users",
 		method = "GET",
-		proxy = true,
+		domains = true,
 		endpoint = "users/" .. id
 	})
 
@@ -400,7 +464,7 @@ function ropi.SearchUser(name, refresh)
 	local success, response = ropi:queue({
 		api = "users",
 		method = "POST",
-		proxy = true,
+		domains = {"roblox", "RoProxy", "ropiproxy"},
 		endpoint = "usernames/users",
 		body = {
 			usernames = {
@@ -490,6 +554,7 @@ function ropi.GetGroupTransactions(id, all)
 			api = "economy",
 			method = "GET",
 			endpoint = url,
+			domains = {"roblox"},
 			headers = {
 				{
 					"Cookie",
@@ -542,6 +607,7 @@ function ropi.SetAssetPrice(collectibleID, price)
 		api = "itemconfiguration",
 		method = "PATCH",
 		endpoint = "collectibles/" .. collectibleID,
+		domains = {"roblox"},
 		headers = {
 			{
 				"Cookie",
