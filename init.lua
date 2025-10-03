@@ -656,7 +656,7 @@ function ropi.SetAssetPrice(collectibleID, price)
 end
 
 local dumpTimer = uv.new_timer()
-uv.timer_start(dumpTimer, 0, 100, function()
+uv.timer_start(dumpTimer, 0, 5, function()
 	if next(ropi.Requests) then
 		ropi:dump()
 	end
