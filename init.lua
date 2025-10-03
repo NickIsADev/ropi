@@ -21,7 +21,7 @@ local ropi = {
 			end
 		},
 		{
-			name = "RoProxy", 
+			name = "RoProxy",
 			parse = function(api)
 				return api .. ".RoProxy.com"
 			end
@@ -38,12 +38,12 @@ local ropi = {
 				return "ropiproxytwo.vercel.app/" .. api
 			end
 		},
-			{
+		{
 			name = "ropiproxythree",
 			parse = function(api)
 				return "ropiproxythree.vercel.app/" .. api
 			end
-		},
+		}
 	}
 }
 
@@ -145,7 +145,7 @@ end
 
 local function fromCache(query, category)
 	for _, item in pairs(ropi.cache[category]) do
-		if (type(query) == "string" and item.name:lower() == query:lower()) or (type(query) == "number" and item.id == query) then
+		if (tostring(query):lower() == item.name:lower()) or (tonumber(query) == item.id) then
 			return item
 		end
 	end
@@ -315,7 +315,7 @@ function ropi:dump()
 
 						bucket_ratelimits[chosenDomain.name] = {
 							updated = realtime(),
-							retry = retryAfter,
+							retry = retryAfter
 						}
 					else
 						table.remove(list, 1)
@@ -324,10 +324,6 @@ function ropi:dump()
 						end
 						safeResume(req.co, ok, response, result)
 					end
-				end)
-
-				if not success then
-					print("[ROPI] | An error occurred while attempting to dump the " .. (bucket or "unknown") .. " bucket: " .. tostring(err))
 				end
 
 				ropi.ActiveBuckets[bucket] = nil
@@ -338,6 +334,7 @@ end
 
 function ropi:request(api, method, endpoint, headers, body, domain, version)
 	local url = "https://" .. domain.parse(api) .. "/" .. (version or "v1") .. "/" .. endpoint
+
 	headers = type(headers) == "table" and headers or {}
 	if not hasHeader(headers, "Content-Type") then
 		table.insert(headers, {
@@ -480,7 +477,13 @@ function ropi.SearchUser(name, refresh)
 	local success, response = ropi:queue({
 		api = "users",
 		method = "POST",
-		domains = {"roblox", "RoProxy", "ropiproxy", "ropiproxytwo", "ropiproxythree"},
+		domains = {
+			"roblox",
+			"RoProxy",
+			"ropiproxy",
+			"ropiproxytwo",
+			"ropiproxythree"
+		},
 		endpoint = "usernames/users",
 		body = {
 			usernames = {
@@ -570,7 +573,9 @@ function ropi.GetGroupTransactions(id, all)
 			api = "economy",
 			method = "GET",
 			endpoint = url,
-			domains = {"roblox"},
+			domains = {
+				"roblox"
+			},
 			headers = {
 				{
 					"Cookie",
@@ -623,7 +628,9 @@ function ropi.SetAssetPrice(collectibleID, price)
 		api = "itemconfiguration",
 		method = "PATCH",
 		endpoint = "collectibles/" .. collectibleID,
-		domains = {"roblox"},
+		domains = {
+			"roblox"
+		},
 		headers = {
 			{
 				"Cookie",
