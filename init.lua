@@ -400,7 +400,7 @@ function ropi.GetAvatarHeadShot(id, opts, refresh)
 	local debugInfo
     for i = 1, 10 do
         debugInfo = debug.getinfo(i, "Sl")
-        if (debugInfo) and (debugInfo.what ~= "C") then
+        if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
             break
         end
     end
@@ -446,7 +446,7 @@ function ropi.GetUser(id, refresh)
 	local debugInfo
     for i = 1, 10 do
         debugInfo = debug.getinfo(i, "Sl")
-        if (debugInfo) and (debugInfo.what ~= "C") then
+        if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
             break
         end
     end
@@ -482,7 +482,7 @@ function ropi.SearchUser(name, refresh)
 	local debugInfo
     for i = 1, 10 do
         debugInfo = debug.getinfo(i, "Sl")
-        if (debugInfo) and (debugInfo.what ~= "C") then
+        if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
             break
         end
     end
