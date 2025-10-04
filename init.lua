@@ -285,21 +285,21 @@ function ropi:dump()
 				end
 
 				ropi.Ratelimits[bucket] = ropi.Ratelimits[bucket] or {}
-				local bucket_ratelimits = ropi.Ratelimits[bucket]
-				bucket_ratelimits.lastDomainIndex = bucket_ratelimits.lastDomainIndex or 0
+				local bucketRatelimit = ropi.Ratelimits[bucket]
+				bucketRatelimit.lastDomainIndex = bucketRatelimit.lastDomainIndex or 0
 
 				local chosenDomain = nil
 				if #domainsToTry > 0 then
-					local start_index = bucket_ratelimits.lastDomainIndex % #domainsToTry + 1
+					local start_index = bucketRatelimit.lastDomainIndex % #domainsToTry + 1
 
 					for i = 1, #domainsToTry do
 						local index = (start_index + i - 2) % #domainsToTry + 1
 						local domain = domainsToTry[index]
-						local domain_ratelimit = bucket_ratelimits[domain.name]
+						local domainRatelimit = bucketRatelimit[domain.name]
 
-						if not domain_ratelimit or not domain_ratelimit.retry or now >= (domain_ratelimit.updated + domain_ratelimit.retry) then
+						if not domainRatelimit or not domainRatelimit.retry or now >= (domainRatelimit.updated + domainRatelimit.retry) then
 							chosenDomain = domain
-							bucket_ratelimits.lastDomainIndex = index
+							bucketRatelimit.lastDomainIndex = index
 							break
 						end
 					end
@@ -318,7 +318,7 @@ function ropi:dump()
 
 						print("[ROPI] | The " .. (bucket or "unknown") .. " bucket on domain " .. chosenDomain.name .. " was ratelimited, requeueing for " .. retryAfter .. "s.")
 
-						bucket_ratelimits[chosenDomain.name] = {
+						bucketRatelimit[chosenDomain.name] = {
 							updated = realtime(),
 							retry = retryAfter
 						}
