@@ -493,7 +493,7 @@ function ropi.SearchUser(name, refresh)
     end
 	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
 
-	if type(name) ~= "string" and type(id) ~= "number" then
+	if type(name) ~= "string" and type(name) ~= "number" then
 		return nil, Error(400, "An invalid name/ID was provided to SearchUser.")
 	end
 
