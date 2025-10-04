@@ -13,6 +13,7 @@ local ropi = {
 	Requests = {},
 	Ratelimits = {},
 	ActiveBuckets = {},
+	RequestOrigins = {},
 	Domains = {
 		{
 			name = "roblox",
@@ -240,6 +241,10 @@ function ropi:queue(request)
 	ropi.Requests[b] = ropi.Requests[b] or {}
 	table.insert(ropi.Requests[b], request)
 
+	if request.origin then
+		ropi.RequestOrigins[request.origin] = (ropi.RequestOrigins[request.origin] and ropi.RequestOrigins[request.origin] + 1) or 0
+	end
+
 	return coroutine.yield()
 end
 
@@ -397,6 +402,15 @@ function ropi.GetToken()
 end
 
 function ropi.GetAvatarHeadShot(id, opts, refresh)
+	local debugInfo
+    for i = 1, 10 do
+        debugInfo = debug.getinfo(i, "Sl")
+        if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
+            break
+        end
+    end
+	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
+
 	if type(id) ~= "string" and type(id) ~= "number" then
 		return nil, Error(400, "An invalid ID was provided to GetAvatarHeadShot.")
 	end
@@ -418,7 +432,8 @@ function ropi.GetAvatarHeadShot(id, opts, refresh)
 		api = "thumbnails",
 		method = "GET",
 		proxy = true,
-		endpoint = "users/avatar-headshot?userIds=" .. id .. "&size=" .. options.size .. "x" .. options.size .. "&format=Png&isCircular=" .. tostring(options.isCircular)
+		endpoint = "users/avatar-headshot?userIds=" .. id .. "&size=" .. options.size .. "x" .. options.size .. "&format=Png&isCircular=" .. tostring(options.isCircular),
+		origin = origin
 	})
 
 	if success and response and response.data then
@@ -433,6 +448,15 @@ function ropi.GetAvatarHeadShot(id, opts, refresh)
 end
 
 function ropi.GetUser(id, refresh)
+	local debugInfo
+    for i = 1, 10 do
+        debugInfo = debug.getinfo(i, "Sl")
+        if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
+            break
+        end
+    end
+	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
+
 	if type(id) ~= "string" and type(id) ~= "number" then
 		return nil, Error(400, "An invalid ID was provided to GetUser.")
 	end
@@ -448,7 +472,8 @@ function ropi.GetUser(id, refresh)
 		api = "users",
 		method = "GET",
 		domains = true,
-		endpoint = "users/" .. id
+		endpoint = "users/" .. id,
+		origin = origin
 	})
 
 	if success and user and user.name and user.displayName and user.id then
@@ -459,6 +484,15 @@ function ropi.GetUser(id, refresh)
 end
 
 function ropi.SearchUser(name, refresh)
+	local debugInfo
+    for i = 1, 10 do
+        debugInfo = debug.getinfo(i, "Sl")
+        if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
+            break
+        end
+    end
+	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
+
 	if type(name) ~= "string" and type(id) ~= "number" then
 		return nil, Error(400, "An invalid name/ID was provided to SearchUser.")
 	end
@@ -490,7 +524,8 @@ function ropi.SearchUser(name, refresh)
 				name
 			},
 			excludeBannedUsers = true
-		}
+		},
+		origin = origin
 	})
 
 	if success and response.data and response.data[1] and response.data[1].name and response.data[1].name:lower() == name:lower() and response.data[1].displayName and response.data[1].id then
