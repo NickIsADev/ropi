@@ -218,6 +218,10 @@ local function Transaction(data)
 end
 
 local function Error(code, message)
+	if _G.Client then
+		_G.Client:error("[ROPI] | " .. message)
+	end
+
 	return {
 		code = code,
 		message = message
@@ -261,6 +265,15 @@ function ropi:dump()
 		then
 			ropi.ActiveBuckets[bucket] = true
 
+			local timeoutTimer = uv.new_timer()
+			uv.timer_start(timeoutTimer, 10000, 0, function()
+				if ropi.ActiveBuckets[bucket] then
+					Error("Timeout: Forcing unlock of bucket " .. tostring(bucket))
+					ropi.ActiveBuckets[bucket] = nil
+				end
+				uv.close(timeoutTimer)
+			end)
+
 			coroutine.wrap(function()
 				local ok, err = pcall(function()
 					table.sort(list, function(a, b)
@@ -268,9 +281,7 @@ function ropi:dump()
 					end)
 
 					local req = list[1]
-					if not req then
-						return
-					end
+					if not req then return end
 
 					local domainsToTry = {}
 					if req.domains == true or req.domains == nil then
@@ -328,7 +339,7 @@ function ropi:dump()
 								end
 							end
 
-							print("[ROPI] | The " .. (bucket or "unknown") .. " bucket on domain " .. chosenDomain.name .. " was ratelimited, requeueing for " .. retryAfter .. "s.")
+							Error("The " .. (bucket or "unknown") .. " bucket on domain " .. chosenDomain.name .. " was ratelimited, requeueing for " .. retryAfter .. "s.")
 
 							bucketRatelimit[chosenDomain.name] = {
 								updated = realtime(),
@@ -361,6 +372,13 @@ function ropi:dump()
 				end)
 
 				ropi.ActiveBuckets[bucket] = nil
+				if not uv.is_closing(timeoutTimer) then
+					uv.close(timeoutTimer)
+				end
+
+				if not ok then
+					Error("Error during bucket dump:", err)
+				end
 			end)()
 		end
 	end
@@ -557,7 +575,7 @@ function ropi.SearchUser(name, refresh)
 		origin = origin
 	})
 
-	if success and response.data and response.data[1] and response.data[1].name and response.data[1].name:lower() == name:lower() and response.data[1].displayName and response.data[1].id then
+	if success and response.data and response.data[1] and response.data[1].name and response.data[1].name:lower() == name:lower() and response.data[1].id then
 		return ropi.GetUser(response.data[1].id)
 	else
 		return nil, response
