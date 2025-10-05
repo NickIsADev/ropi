@@ -13,6 +13,7 @@ local ropi = {
 	Requests = {},
 	Ratelimits = {},
 	ActiveBuckets = {},
+	RequestOrigins = {},
 	Domains = {
 		{
 			name = "roblox",
@@ -217,6 +218,10 @@ local function Transaction(data)
 end
 
 local function Error(code, message)
+	if _G.Client then
+		_G.Client:error("[ROPI] | " .. message)
+	end
+
 	return {
 		code = code,
 		message = message
@@ -240,6 +245,10 @@ function ropi:queue(request)
 	ropi.Requests[b] = ropi.Requests[b] or {}
 	table.insert(ropi.Requests[b], request)
 
+	if request.origin then
+		ropi.RequestOrigins[request.origin] = (ropi.RequestOrigins[request.origin] and ropi.RequestOrigins[request.origin] + 1) or 0
+	end
+
 	return coroutine.yield()
 end
 
@@ -247,86 +256,119 @@ function ropi:dump()
 	local now = realtime()
 
 	for bucket, list in pairs(ropi.Requests) do
-		if not ropi.ActiveBuckets[bucket] and #list > 0 then
+		ropi.Ratelimits[bucket] = ropi.Ratelimits[bucket] or {}
+		local bucketRatelimit = ropi.Ratelimits[bucket]
+
+		if not ropi.ActiveBuckets[bucket] and #list > 0 and (not bucketRatelimit.retryAt or now >= bucketRatelimit.retryAt) then
 			ropi.ActiveBuckets[bucket] = true
 
-			coroutine.wrap(function()
-				table.sort(list, function(a, b)
-					return a.timestamp < b.timestamp
-				end)
-
-				local req = list[1]
-				if not req then
+			local timeoutTimer = uv.new_timer()
+			uv.timer_start(timeoutTimer, 10000, 0, function()
+				if ropi.ActiveBuckets[bucket] then
+					Error("Timeout: Forcing unlock of bucket " .. tostring(bucket))
 					ropi.ActiveBuckets[bucket] = nil
-					return
 				end
+				uv.close(timeoutTimer)
+			end)
 
-				local domainsToTry = {}
-				if req.domains == true or req.domains == nil then
-					domainsToTry = ropi.Domains
-				elseif type(req.domains) == "table" then
-					for _, domainName in ipairs(req.domains) do
-						for _, domainDef in ipairs(ropi.Domains) do
-							if domainDef.name == domainName then
-								table.insert(domainsToTry, domainDef)
-								break
+			coroutine.wrap(function()
+				local ok, err = pcall(function()
+					table.sort(list, function(a, b)
+						return a.timestamp < b.timestamp
+					end)
+
+					local req = list[1]
+					if not req then
+						return
+					end
+
+					local domainsToTry = {}
+					if req.domains == true or req.domains == nil then
+						domainsToTry = ropi.Domains
+					elseif type(req.domains) == "table" then
+						for _, domainName in ipairs(req.domains) do
+							for _, domainDef in ipairs(ropi.Domains) do
+								if domainDef.name == domainName then
+									table.insert(domainsToTry, domainDef)
+									break
+								end
 							end
 						end
 					end
-				end
 
-				if #domainsToTry == 0 then
-					domainsToTry = ropi.Domains
-				end
+					if #domainsToTry == 0 then
+						domainsToTry = ropi.Domains
+					end
 
-				ropi.Ratelimits[bucket] = ropi.Ratelimits[bucket] or {}
-				local bucket_ratelimits = ropi.Ratelimits[bucket]
-				bucket_ratelimits.lastDomainIndex = bucket_ratelimits.lastDomainIndex or 0
+					bucketRatelimit.lastDomainIndex = bucketRatelimit.lastDomainIndex or 0
 
-				local chosenDomain = nil
-				if #domainsToTry > 0 then
-					local start_index = bucket_ratelimits.lastDomainIndex % #domainsToTry + 1
+					local chosenDomain
+					local start_index = bucketRatelimit.lastDomainIndex % #domainsToTry + 1
 
 					for i = 1, #domainsToTry do
 						local index = (start_index + i - 2) % #domainsToTry + 1
 						local domain = domainsToTry[index]
-						local domain_ratelimit = bucket_ratelimits[domain.name]
+						local domainRatelimit = bucketRatelimit[domain.name]
 
-						if not domain_ratelimit or not domain_ratelimit.retry or now >= (domain_ratelimit.updated + domain_ratelimit.retry) then
+						if not domainRatelimit or not domainRatelimit.retry or now >= (domainRatelimit.updated + domainRatelimit.retry) then
 							chosenDomain = domain
-							bucket_ratelimits.lastDomainIndex = index
+							bucketRatelimit.lastDomainIndex = index
 							break
 						end
 					end
-				end
 
-				if chosenDomain then
-					local ok, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, chosenDomain, req.version)
+					if chosenDomain then
+						bucketRatelimit.retryAt = nil
+						local okReq, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, chosenDomain, req.version)
 
-					if not ok and result.code == 429 then
-						local retryAfter = 1
-						for _, header in pairs(result) do
-							if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "retry-after" then
-								retryAfter = tonumber(header[2]) or 1
+						if not okReq and type(result) == "table" and result.code == 429 then
+							local retryAfter = 1
+							for _, header in pairs(result) do
+								if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "retry-after" then
+									retryAfter = tonumber(header[2]) or 1
+								end
+							end
+
+							Error("The " .. (bucket or "unknown") .. " bucket on domain " .. chosenDomain.name .. " was ratelimited, requeueing for " .. retryAfter .. "s.")
+
+							bucketRatelimit[chosenDomain.name] = {
+								updated = realtime(),
+								retry = retryAfter
+							}
+						else
+							table.remove(list, 1)
+							if #list == 0 then
+								ropi.Requests[bucket] = nil
+							end
+							safeResume(req.co, okReq, response, result)
+						end
+					else
+						local soonestRetryAt
+						for _, domain in ipairs(domainsToTry) do
+							local domainRatelimit = bucketRatelimit[domain.name]
+							if domainRatelimit and domainRatelimit.retry then
+								local retryAt = domainRatelimit.updated + domainRatelimit.retry
+								if now < retryAt then
+									if not soonestRetryAt or retryAt < soonestRetryAt then
+										soonestRetryAt = retryAt
+									end
+								end
 							end
 						end
-
-						print("[ROPI] | The " .. (bucket or "unknown") .. " bucket on domain " .. chosenDomain.name .. " was ratelimited, requeueing for " .. retryAfter .. "s.")
-
-						bucket_ratelimits[chosenDomain.name] = {
-							updated = realtime(),
-							retry = retryAfter
-						}
-					else
-						table.remove(list, 1)
-						if #list == 0 then
-							ropi.Requests[bucket] = nil
+						if soonestRetryAt then
+							bucketRatelimit.retryAt = soonestRetryAt
 						end
-						safeResume(req.co, ok, response, result)
 					end
-				end
+				end)
 
 				ropi.ActiveBuckets[bucket] = nil
+				if not uv.is_closing(timeoutTimer) then
+					uv.close(timeoutTimer)
+				end
+
+				if not ok then
+					Error("Error during bucket dump:", err)
+				end
 			end)()
 		end
 	end
@@ -398,12 +440,12 @@ end
 
 function ropi.GetAvatarHeadShot(id, opts, refresh)
 	local debugInfo
-    for i = 1, 10 do
-        debugInfo = debug.getinfo(i, "Sl")
-        if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
-            break
-        end
-    end
+	for i = 1, 10 do
+		debugInfo = debug.getinfo(i, "Sl")
+		if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
+			break
+		end
+	end
 	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
 
 	if type(id) ~= "string" and type(id) ~= "number" then
@@ -444,12 +486,12 @@ end
 
 function ropi.GetUser(id, refresh)
 	local debugInfo
-    for i = 1, 10 do
-        debugInfo = debug.getinfo(i, "Sl")
-        if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
-            break
-        end
-    end
+	for i = 1, 10 do
+		debugInfo = debug.getinfo(i, "Sl")
+		if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
+			break
+		end
+	end
 	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
 
 	if type(id) ~= "string" and type(id) ~= "number" then
@@ -480,15 +522,15 @@ end
 
 function ropi.SearchUser(name, refresh)
 	local debugInfo
-    for i = 1, 10 do
-        debugInfo = debug.getinfo(i, "Sl")
-        if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
-            break
-        end
-    end
+	for i = 1, 10 do
+		debugInfo = debug.getinfo(i, "Sl")
+		if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
+			break
+		end
+	end
 	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
 
-	if type(name) ~= "string" and type(id) ~= "number" then
+	if type(name) ~= "string" and type(name) ~= "number" then
 		return nil, Error(400, "An invalid name/ID was provided to SearchUser.")
 	end
 
@@ -523,7 +565,7 @@ function ropi.SearchUser(name, refresh)
 		origin = origin
 	})
 
-	if success and response.data and response.data[1] and response.data[1].name and response.data[1].name:lower() == name:lower() and response.data[1].displayName and response.data[1].id then
+	if success and response.data and response.data[1] and response.data[1].name and response.data[1].name:lower() == name:lower() and response.data[1].id then
 		return ropi.GetUser(response.data[1].id)
 	else
 		return nil, response
@@ -698,5 +740,3 @@ uv.timer_start(dumpTimer, 0, 5, function()
 		ropi:dump()
 	end
 end)
-
-return ropi
