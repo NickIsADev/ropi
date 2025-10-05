@@ -219,7 +219,7 @@ end
 
 local function Error(code, message)
 	if _G.Client then
-		_G.Client:error("[ROPI] | " .. message)
+		_G.Client:error("[ROPI] | " .. tostring(message))
 	end
 
 	return {
@@ -740,3 +740,5 @@ uv.timer_start(dumpTimer, 0, 5, function()
 		ropi:dump()
 	end
 end)
+
+return ropi
