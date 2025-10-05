@@ -252,44 +252,47 @@ function ropi:dump()
 	local now = realtime()
 
 	for bucket, list in pairs(ropi.Requests) do
-		if not ropi.ActiveBuckets[bucket] and #list > 0 then
+		ropi.Ratelimits[bucket] = ropi.Ratelimits[bucket] or {}
+		local bucketRatelimit = ropi.Ratelimits[bucket]
+
+		if not ropi.ActiveBuckets[bucket]
+			and #list > 0
+			and (not bucketRatelimit.retryAt or now >= bucketRatelimit.retryAt)
+		then
 			ropi.ActiveBuckets[bucket] = true
 
 			coroutine.wrap(function()
-				table.sort(list, function(a, b)
-					return a.timestamp < b.timestamp
-				end)
+				local ok, err = pcall(function()
+					table.sort(list, function(a, b)
+						return a.timestamp < b.timestamp
+					end)
 
-				local req = list[1]
-				if not req then
-					ropi.ActiveBuckets[bucket] = nil
-					return
-				end
+					local req = list[1]
+					if not req then
+						return
+					end
 
-				local domainsToTry = {}
-				if req.domains == true or req.domains == nil then
-					domainsToTry = ropi.Domains
-				elseif type(req.domains) == "table" then
-					for _, domainName in ipairs(req.domains) do
-						for _, domainDef in ipairs(ropi.Domains) do
-							if domainDef.name == domainName then
-								table.insert(domainsToTry, domainDef)
-								break
+					local domainsToTry = {}
+					if req.domains == true or req.domains == nil then
+						domainsToTry = ropi.Domains
+					elseif type(req.domains) == "table" then
+						for _, domainName in ipairs(req.domains) do
+							for _, domainDef in ipairs(ropi.Domains) do
+								if domainDef.name == domainName then
+									table.insert(domainsToTry, domainDef)
+									break
+								end
 							end
 						end
 					end
-				end
 
-				if #domainsToTry == 0 then
-					domainsToTry = ropi.Domains
-				end
+					if #domainsToTry == 0 then
+						domainsToTry = ropi.Domains
+					end
 
-				ropi.Ratelimits[bucket] = ropi.Ratelimits[bucket] or {}
-				local bucketRatelimit = ropi.Ratelimits[bucket]
-				bucketRatelimit.lastDomainIndex = bucketRatelimit.lastDomainIndex or 0
+					bucketRatelimit.lastDomainIndex = bucketRatelimit.lastDomainIndex or 0
 
-				local chosenDomain = nil
-				if #domainsToTry > 0 then
+					local chosenDomain
 					local start_index = bucketRatelimit.lastDomainIndex % #domainsToTry + 1
 
 					for i = 1, #domainsToTry do
@@ -297,39 +300,65 @@ function ropi:dump()
 						local domain = domainsToTry[index]
 						local domainRatelimit = bucketRatelimit[domain.name]
 
-						if not domainRatelimit or not domainRatelimit.retry or now >= (domainRatelimit.updated + domainRatelimit.retry) then
+						if not domainRatelimit
+							or not domainRatelimit.retry
+							or now >= (domainRatelimit.updated + domainRatelimit.retry)
+						then
 							chosenDomain = domain
 							bucketRatelimit.lastDomainIndex = index
 							break
 						end
 					end
-				end
 
-				if chosenDomain then
-					local ok, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, chosenDomain, req.version)
+					if chosenDomain then
+						bucketRatelimit.retryAt = nil
+						local okReq, response, result = ropi:request(
+							req.api, req.method, req.endpoint,
+							req.headers, req.body, chosenDomain, req.version
+						)
 
-					if not ok and result.code == 429 then
-						local retryAfter = 1
-						for _, header in pairs(result) do
-							if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "retry-after" then
-								retryAfter = tonumber(header[2]) or 1
+						if not okReq and type(result) == "table" and result.code == 429 then
+							local retryAfter = 1
+							for _, header in pairs(result) do
+								if type(header) == "table"
+									and type(header[1]) == "string"
+									and header[1]:lower() == "retry-after"
+								then
+									retryAfter = tonumber(header[2]) or 1
+								end
+							end
+
+							print("[ROPI] | The " .. (bucket or "unknown") .. " bucket on domain " .. chosenDomain.name .. " was ratelimited, requeueing for " .. retryAfter .. "s.")
+
+							bucketRatelimit[chosenDomain.name] = {
+								updated = realtime(),
+								retry = retryAfter
+							}
+						else
+							table.remove(list, 1)
+							if #list == 0 then
+								ropi.Requests[bucket] = nil
+							end
+							safeResume(req.co, okReq, response, result)
+						end
+					else
+						local soonestRetryAt
+						for _, domain in ipairs(domainsToTry) do
+							local domainRatelimit = bucketRatelimit[domain.name]
+							if domainRatelimit and domainRatelimit.retry then
+								local retryAt = domainRatelimit.updated + domainRatelimit.retry
+								if now < retryAt then
+									if not soonestRetryAt or retryAt < soonestRetryAt then
+										soonestRetryAt = retryAt
+									end
+								end
 							end
 						end
-
-						print("[ROPI] | The " .. (bucket or "unknown") .. " bucket on domain " .. chosenDomain.name .. " was ratelimited, requeueing for " .. retryAfter .. "s.")
-
-						bucketRatelimit[chosenDomain.name] = {
-							updated = realtime(),
-							retry = retryAfter
-						}
-					else
-						table.remove(list, 1)
-						if #list == 0 then
-							ropi.Requests[bucket] = nil
+						if soonestRetryAt then
+							bucketRatelimit.retryAt = soonestRetryAt
 						end
-						safeResume(req.co, ok, response, result)
 					end
-				end
+				end)
 
 				ropi.ActiveBuckets[bucket] = nil
 			end)()
