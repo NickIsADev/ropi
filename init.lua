@@ -426,7 +426,7 @@ function ropi.GetToken()
 		}
 	})
 
-	if not success then
+	if not result or result.code ~= 403 then
 		return false, response
 	end
 
