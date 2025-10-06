@@ -319,7 +319,7 @@ function ropi:dump()
 
 					if chosenDomain then
 						bucketRatelimit.retryAt = nil
-						local okReq, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, chosenDomain, req.version)
+						local okReq, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, chosenDomain, req.expectedCode, req.version)
 
 						if not okReq and type(result) == "table" and result.code == 429 then
 							local retryAfter = 1
@@ -374,7 +374,7 @@ function ropi:dump()
 	end
 end
 
-function ropi:request(api, method, endpoint, headers, body, domain, version)
+function ropi:request(api, method, endpoint, headers, body, domain, expectedCode, version)
 	local url = "https://" .. domain.parse(api) .. "/" .. (version or "v1") .. "/" .. endpoint
 
 	headers = type(headers) == "table" and headers or {}
@@ -398,6 +398,8 @@ function ropi:request(api, method, endpoint, headers, body, domain, version)
 
 	if result.code == 200 then
 		return true, response, result
+	elseif expectedCode and result.code == expectedCode then
+		return true, response, result
 	else
 		local err = (response and response.errors and response.errors[1] and Error(response.errors[1].code, response.errors[1].message)) or Error(result.code, result.reason)
 		return false, err, result
@@ -418,6 +420,7 @@ function ropi.GetToken()
 		method = "PATCH",
 		endpoint = "collectibles/xcsrftoken",
 		domains = {"roblox"},
+		expectedCode = 403,
 		headers = {
 			{
 				"Cookie",
@@ -426,7 +429,7 @@ function ropi.GetToken()
 		}
 	})
 
-	if not result or result.code ~= 403 then
+	if not success or not result or result.code ~= 403 then
 		return false, response
 	end
 
