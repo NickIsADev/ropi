@@ -219,7 +219,7 @@ end
 
 local function Error(code, message)
 	if _G.Client then
-		_G.Client:error("[ROPI] | " .. message)
+		_G.Client:error("[ROPI] | " .. tostring(message))
 	end
 
 	return {
@@ -259,10 +259,7 @@ function ropi:dump()
 		ropi.Ratelimits[bucket] = ropi.Ratelimits[bucket] or {}
 		local bucketRatelimit = ropi.Ratelimits[bucket]
 
-		if not ropi.ActiveBuckets[bucket]
-			and #list > 0
-			and (not bucketRatelimit.retryAt or now >= bucketRatelimit.retryAt)
-		then
+		if not ropi.ActiveBuckets[bucket] and #list > 0 and (not bucketRatelimit.retryAt or now >= bucketRatelimit.retryAt) then
 			ropi.ActiveBuckets[bucket] = true
 
 			local timeoutTimer = uv.new_timer()
@@ -281,7 +278,9 @@ function ropi:dump()
 					end)
 
 					local req = list[1]
-					if not req then return end
+					if not req then
+						return
+					end
 
 					local domainsToTry = {}
 					if req.domains == true or req.domains == nil then
@@ -311,10 +310,7 @@ function ropi:dump()
 						local domain = domainsToTry[index]
 						local domainRatelimit = bucketRatelimit[domain.name]
 
-						if not domainRatelimit
-							or not domainRatelimit.retry
-							or now >= (domainRatelimit.updated + domainRatelimit.retry)
-						then
+						if not domainRatelimit or not domainRatelimit.retry or now >= (domainRatelimit.updated + domainRatelimit.retry) then
 							chosenDomain = domain
 							bucketRatelimit.lastDomainIndex = index
 							break
@@ -323,18 +319,12 @@ function ropi:dump()
 
 					if chosenDomain then
 						bucketRatelimit.retryAt = nil
-						local okReq, response, result = ropi:request(
-							req.api, req.method, req.endpoint,
-							req.headers, req.body, chosenDomain, req.version
-						)
+						local okReq, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, chosenDomain, req.version)
 
 						if not okReq and type(result) == "table" and result.code == 429 then
 							local retryAfter = 1
 							for _, header in pairs(result) do
-								if type(header) == "table"
-									and type(header[1]) == "string"
-									and header[1]:lower() == "retry-after"
-								then
+								if type(header) == "table" and type(header[1]) == "string" and header[1]:lower() == "retry-after" then
 									retryAfter = tonumber(header[2]) or 1
 								end
 							end
@@ -450,12 +440,12 @@ end
 
 function ropi.GetAvatarHeadShot(id, opts, refresh)
 	local debugInfo
-    for i = 1, 10 do
-        debugInfo = debug.getinfo(i, "Sl")
-        if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
-            break
-        end
-    end
+	for i = 1, 10 do
+		debugInfo = debug.getinfo(i, "Sl")
+		if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
+			break
+		end
+	end
 	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
 
 	if type(id) ~= "string" and type(id) ~= "number" then
@@ -496,12 +486,12 @@ end
 
 function ropi.GetUser(id, refresh)
 	local debugInfo
-    for i = 1, 10 do
-        debugInfo = debug.getinfo(i, "Sl")
-        if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
-            break
-        end
-    end
+	for i = 1, 10 do
+		debugInfo = debug.getinfo(i, "Sl")
+		if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
+			break
+		end
+	end
 	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
 
 	if type(id) ~= "string" and type(id) ~= "number" then
@@ -532,12 +522,12 @@ end
 
 function ropi.SearchUser(name, refresh)
 	local debugInfo
-    for i = 1, 10 do
-        debugInfo = debug.getinfo(i, "Sl")
-        if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
-            break
-        end
-    end
+	for i = 1, 10 do
+		debugInfo = debug.getinfo(i, "Sl")
+		if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
+			break
+		end
+	end
 	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
 
 	if type(name) ~= "string" and type(name) ~= "number" then
