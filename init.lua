@@ -417,6 +417,7 @@ function ropi.GetToken()
 		api = "itemconfiguration",
 		method = "PATCH",
 		endpoint = "collectibles/xcsrftoken",
+		domains = {"roblox"},
 		headers = {
 			{
 				"Cookie",
@@ -468,7 +469,7 @@ function ropi.GetAvatarHeadShot(id, opts, refresh)
 	local success, response = ropi:queue({
 		api = "thumbnails",
 		method = "GET",
-		proxy = true,
+		domains = true,
 		endpoint = "users/avatar-headshot?userIds=" .. id .. "&size=" .. options.size .. "x" .. options.size .. "&format=Png&isCircular=" .. tostring(options.isCircular),
 		origin = origin
 	})
