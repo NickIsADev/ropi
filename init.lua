@@ -195,12 +195,12 @@ local function Group(data)
 	}
 end
 
-local function Transaction(data)
+local function Transaction(data, loadUser)
 	return {
 		hash = data.idHash,
 		created = fromISO(data.created),
 		pending = data.isPending,
-		user = ropi.GetUser(data.agent.id),
+		user = (loadUser and ropi.GetUser(data.agent.id)) or {id = data.agent.id},
 		item = {
 			name = data.details.name,
 			id = data.details.id,
@@ -629,7 +629,7 @@ function ropi.GetGroupMembers(id, full)
 	return true, members
 end
 
-function ropi.GetGroupTransactions(id, all)
+function ropi.GetGroupTransactions(id, pages, loadUsers) -- pass true for pages to get all pages
 	if not ropi.cookie then
 		return nil, Error(400, ".ROBLOSECURITY cookie has not yet been set.")
 	end
@@ -642,6 +642,7 @@ function ropi.GetGroupTransactions(id, all)
 
 	local transactions = {}
 	local cursor = nil
+	local pagesFetched = 0
 
 	repeat
 		local url = "groups/" .. id .. "/transactions?limit=100&transactionType=Sale" .. ((cursor and "&cursor=" .. cursor) or "")
@@ -667,14 +668,15 @@ function ropi.GetGroupTransactions(id, all)
 
 		if success and response then
 			for _, transactionData in pairs(response.data or {}) do
-				table.insert(transactions, Transaction(transactionData))
+				table.insert(transactions, Transaction(transactionData, loadUsers))
 			end
 
 			cursor = response.nextPageCursor
+			pagesFetched = pagesFetched + 1
 		else
 			break
 		end
-	until (not cursor) or (not all)
+	until not cursor or (type(pages) == "number" and pagesFetched >= pages)
 
 	table.sort(transactions, function(a, b)
 		return a.created > b.created
