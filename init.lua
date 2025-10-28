@@ -170,7 +170,7 @@ local function User(data)
 	}
 end
 
-local function weakUser(data)
+local function WeakUser(data)
 	return {
 		displayName = data.displayName,
 		name = data.name,
@@ -366,35 +366,6 @@ function ropi:dump()
 									end
 								end
 							end
-
-							Error("The " .. (bucket or "unknown") .. " bucket on domain " .. chosenDomain.name .. " was ratelimited, requeueing for " .. retryAfter .. "s.")
-
-							bucketRatelimit[chosenDomain.name] = {
-								updated = realtime(),
-								retry = retryAfter
-							}
-						else
-							table.remove(list, 1)
-							if #list == 0 then
-								ropi.Requests[bucket] = nil
-							end
-							safeResume(req.co, okReq, response, result)
-						end
-					else
-						local soonestRetryAt
-						for _, domain in ipairs(domainsToTry) do
-							local domainRatelimit = bucketRatelimit[domain.name]
-							if domainRatelimit and domainRatelimit.retry then
-								local retryAt = domainRatelimit.updated + domainRatelimit.retry
-								if now < retryAt then
-									if not soonestRetryAt or retryAt < soonestRetryAt then
-										soonestRetryAt = retryAt
-									end
-								end
-							end
-						end
-						if soonestRetryAt then
-							bucketRatelimit.retryAt = soonestRetryAt
 						end
 						if soonestRetryAt then
 							bucketRatelimit.retryAt = soonestRetryAt
@@ -624,7 +595,7 @@ function ropi.SearchUsers(usernames, fullUserObject, refresh)
 							table.insert(users, user)
 						end
 					else
-						table.insert(users, intoCache(weakUser(userData), "weakUsers"))
+						table.insert(users, intoCache(WeakUser(userData), "weakUsers"))
 					end
 				end
 			end
