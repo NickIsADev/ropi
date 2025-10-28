@@ -6,6 +6,7 @@ local uv = require("uv")
 local ropi = {
 	cache = {
 		users = {},
+		weakUsers = {},
 		avatars = {},
 		groups = {}
 	},
@@ -164,6 +165,17 @@ local function User(data)
 		verified = not not data.hasVerifiedBadge,
 		banned = not not data.isBanned,
 		created = fromISO(data.created),
+		profile = "https://roblox.com/users/" .. data.id .. "/profile",
+		hyperlink = "[" .. data.name .. "](<https://roblox.com/users/" .. data.id .. "/profile>)"
+	}
+end
+
+local function weakUser(data)
+	return {
+		displayName = data.displayName,
+		name = data.name,
+		id = data.id,
+		verified = not not data.hasVerifiedBadge,
 		profile = "https://roblox.com/users/" .. data.id .. "/profile",
 		hyperlink = "[" .. data.name .. "](<https://roblox.com/users/" .. data.id .. "/profile>)"
 	}
@@ -524,7 +536,7 @@ function ropi.GetUser(id, refresh)
 	end
 end
 
-function ropi.SearchUser(name, refresh)
+function ropi.SearchUsers(usernames, fullUserObject, refresh)
 	local debugInfo
 	for i = 1, 10 do
 		debugInfo = debug.getinfo(i, "Sl")
@@ -534,6 +546,72 @@ function ropi.SearchUser(name, refresh)
 	end
 	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
 
+	if type(usernames) ~= "table" then
+		return nil, Error(400, "An invalid username table was provided to SearchUsers.")
+	end
+
+	local users = {}
+
+	if not refresh then
+		for i = #usernames, 1, -1 do
+			local username = usernames[i]
+			if type(username) == "string" then
+				local cached = fromCache(username, "users") or (not fullUserObject and fromCache(username, "weakUsers"))
+				if cached then
+					table.insert(users, cached)
+					table.remove(usernames, i)
+				end
+			end
+		end
+	end
+
+	local errorResponse
+
+	if next(usernames) then
+		local success, response = ropi:queue({
+			api = "users",
+			method = "POST",
+			domains = {
+				"roblox",
+				"RoProxy",
+				"ropiproxy",
+				"ropiproxytwo",
+				"ropiproxythree"
+			},
+			endpoint = "usernames/users",
+			body = {
+				usernames = usernames,
+				excludeBannedUsers = true
+			},
+			origin = origin
+		})
+
+		if success and type(response) == "table" and type(response.data) == "table" and next(response.data) then
+			for _, userData in pairs(response.data) do
+				if type(userData) == "table" and userData.id then
+					if fullUserObject then
+						local user = ropi.GetUser(userData.id)
+						if type(user) == "table" then
+							table.insert(users, user)
+						end
+					else
+						table.insert(users, intoCache(weakUser(userData), "weakUsers"))
+					end
+				end
+			end
+		else
+			errorResponse = response
+		end
+	end
+
+	if not next(users) and errorResponse then
+		return nil, errorResponse
+	else
+		return true, users
+	end
+end
+
+function ropi.SearchUser(name, refresh)
 	if type(name) ~= "string" and type(name) ~= "number" then
 		return nil, Error(400, "An invalid name/ID was provided to SearchUser.")
 	end
@@ -542,37 +620,12 @@ function ropi.SearchUser(name, refresh)
 		return ropi.GetUser(name, refresh)
 	end
 
-	if not refresh then
-		local cached = fromCache(name, "users")
-		if cached then
-			return cached
-		end
-	end
+	local success, users = ropi.SearchUsers({name}, true, refresh)
 
-	local success, response = ropi:queue({
-		api = "users",
-		method = "POST",
-		domains = {
-			"roblox",
-			"RoProxy",
-			"ropiproxy",
-			"ropiproxytwo",
-			"ropiproxythree"
-		},
-		endpoint = "usernames/users",
-		body = {
-			usernames = {
-				name
-			},
-			excludeBannedUsers = true
-		},
-		origin = origin
-	})
-
-	if success and response.data and response.data[1] and response.data[1].name and response.data[1].name:lower() == name:lower() and response.data[1].id then
-		return ropi.GetUser(response.data[1].id)
+	if success and type(users) == "table" and users[1] then
+		return true, users[1]
 	else
-		return nil, response
+		return nil, users
 	end
 end
 
