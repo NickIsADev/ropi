@@ -6,6 +6,7 @@ local uv = require("uv")
 local ropi = {
 	cache = {
 		users = {},
+		weakUsers = {},
 		avatars = {},
 		groups = {}
 	},
@@ -169,6 +170,17 @@ local function User(data)
 	}
 end
 
+local function WeakUser(data)
+	return {
+		displayName = data.displayName,
+		name = data.name,
+		id = data.id,
+		verified = not not data.hasVerifiedBadge,
+		profile = "https://roblox.com/users/" .. data.id .. "/profile",
+		hyperlink = "[" .. data.name .. "](<https://roblox.com/users/" .. data.id .. "/profile>)"
+	}
+end
+
 local function GroupUser(data)
 	return {
 		name = data.username,
@@ -195,12 +207,12 @@ local function Group(data)
 	}
 end
 
-local function Transaction(data)
+local function Transaction(data, loadUser)
 	return {
 		hash = data.idHash,
 		created = fromISO(data.created),
 		pending = data.isPending,
-		user = ropi.GetUser(data.agent.id),
+		user = (loadUser and ropi.GetUser(data.agent.id)) or {id = data.agent.id},
 		item = {
 			name = data.details.name,
 			id = data.details.id,
@@ -319,7 +331,7 @@ function ropi:dump()
 
 					if chosenDomain then
 						bucketRatelimit.retryAt = nil
-						local okReq, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, chosenDomain, req.version)
+						local okReq, response, result = ropi:request(req.api, req.method, req.endpoint, req.headers, req.body, chosenDomain, req.expectedCode, req.version)
 
 						if not okReq and type(result) == "table" and result.code == 429 then
 							local retryAfter = 1
@@ -374,7 +386,7 @@ function ropi:dump()
 	end
 end
 
-function ropi:request(api, method, endpoint, headers, body, domain, version)
+function ropi:request(api, method, endpoint, headers, body, domain, expectedCode, version)
 	local url = "https://" .. domain.parse(api) .. "/" .. (version or "v1") .. "/" .. endpoint
 
 	headers = type(headers) == "table" and headers or {}
@@ -398,6 +410,8 @@ function ropi:request(api, method, endpoint, headers, body, domain, version)
 
 	if result.code == 200 then
 		return true, response, result
+	elseif expectedCode and result.code == expectedCode then
+		return true, response, result
 	else
 		local err = (response and response.errors and response.errors[1] and Error(response.errors[1].code, response.errors[1].message)) or Error(result.code, result.reason)
 		return false, err, result
@@ -417,6 +431,8 @@ function ropi.GetToken()
 		api = "itemconfiguration",
 		method = "PATCH",
 		endpoint = "collectibles/xcsrftoken",
+		domains = {"roblox"},
+		expectedCode = 403,
 		headers = {
 			{
 				"Cookie",
@@ -425,7 +441,7 @@ function ropi.GetToken()
 		}
 	})
 
-	if not success then
+	if not success or not result or result.code ~= 403 then
 		return false, response
 	end
 
@@ -468,7 +484,7 @@ function ropi.GetAvatarHeadShot(id, opts, refresh)
 	local success, response = ropi:queue({
 		api = "thumbnails",
 		method = "GET",
-		proxy = true,
+		domains = true,
 		endpoint = "users/avatar-headshot?userIds=" .. id .. "&size=" .. options.size .. "x" .. options.size .. "&format=Png&isCircular=" .. tostring(options.isCircular),
 		origin = origin
 	})
@@ -520,7 +536,7 @@ function ropi.GetUser(id, refresh)
 	end
 end
 
-function ropi.SearchUser(name, refresh)
+function ropi.SearchUsers(usernames, fullUserObject, refresh)
 	local debugInfo
 	for i = 1, 10 do
 		debugInfo = debug.getinfo(i, "Sl")
@@ -530,6 +546,72 @@ function ropi.SearchUser(name, refresh)
 	end
 	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
 
+	if type(usernames) ~= "table" then
+		return nil, Error(400, "An invalid username table was provided to SearchUsers.")
+	end
+
+	local users = {}
+
+	if not refresh then
+		for i = #usernames, 1, -1 do
+			local username = usernames[i]
+			if type(username) == "string" then
+				local cached = fromCache(username, "users") or (not fullUserObject and fromCache(username, "weakUsers"))
+				if cached then
+					table.insert(users, cached)
+					table.remove(usernames, i)
+				end
+			end
+		end
+	end
+
+	local errorResponse
+
+	if next(usernames) then
+		local success, response = ropi:queue({
+			api = "users",
+			method = "POST",
+			domains = {
+				"roblox",
+				"RoProxy",
+				"ropiproxy",
+				"ropiproxytwo",
+				"ropiproxythree"
+			},
+			endpoint = "usernames/users",
+			body = {
+				usernames = usernames,
+				excludeBannedUsers = true
+			},
+			origin = origin
+		})
+
+		if success and type(response) == "table" and type(response.data) == "table" and next(response.data) then
+			for _, userData in pairs(response.data) do
+				if type(userData) == "table" and userData.id then
+					if fullUserObject then
+						local user = ropi.GetUser(userData.id)
+						if type(user) == "table" then
+							table.insert(users, user)
+						end
+					else
+						table.insert(users, intoCache(WeakUser(userData), "weakUsers"))
+					end
+				end
+			end
+		else
+			errorResponse = response
+		end
+	end
+
+	if not next(users) and errorResponse then
+		return nil, errorResponse
+	else
+		return users
+	end
+end
+
+function ropi.SearchUser(name, refresh)
 	if type(name) ~= "string" and type(name) ~= "number" then
 		return nil, Error(400, "An invalid name/ID was provided to SearchUser.")
 	end
@@ -538,37 +620,12 @@ function ropi.SearchUser(name, refresh)
 		return ropi.GetUser(name, refresh)
 	end
 
-	if not refresh then
-		local cached = fromCache(name, "users")
-		if cached then
-			return cached
-		end
-	end
+	local success, users = ropi.SearchUsers({name}, true, refresh)
 
-	local success, response = ropi:queue({
-		api = "users",
-		method = "POST",
-		domains = {
-			"roblox",
-			"RoProxy",
-			"ropiproxy",
-			"ropiproxytwo",
-			"ropiproxythree"
-		},
-		endpoint = "usernames/users",
-		body = {
-			usernames = {
-				name
-			},
-			excludeBannedUsers = true
-		},
-		origin = origin
-	})
-
-	if success and response.data and response.data[1] and response.data[1].name and response.data[1].name:lower() == name:lower() and response.data[1].id then
-		return ropi.GetUser(response.data[1].id)
+	if success and type(users) == "table" and users[1] then
+		return users[1]
 	else
-		return nil, response
+		return nil, users
 	end
 end
 
@@ -625,7 +682,7 @@ function ropi.GetGroupMembers(id, full)
 	return true, members
 end
 
-function ropi.GetGroupTransactions(id, all)
+function ropi.GetGroupTransactions(id, pages, loadUsers) -- pass true for pages to get all pages
 	if not ropi.cookie then
 		return nil, Error(400, ".ROBLOSECURITY cookie has not yet been set.")
 	end
@@ -638,6 +695,7 @@ function ropi.GetGroupTransactions(id, all)
 
 	local transactions = {}
 	local cursor = nil
+	local pagesFetched = 0
 
 	repeat
 		local url = "groups/" .. id .. "/transactions?limit=100&transactionType=Sale" .. ((cursor and "&cursor=" .. cursor) or "")
@@ -663,14 +721,15 @@ function ropi.GetGroupTransactions(id, all)
 
 		if success and response then
 			for _, transactionData in pairs(response.data or {}) do
-				table.insert(transactions, Transaction(transactionData))
+				table.insert(transactions, Transaction(transactionData, loadUsers))
 			end
 
 			cursor = response.nextPageCursor
+			pagesFetched = pagesFetched + 1
 		else
 			break
 		end
-	until (not cursor) or (not all)
+	until not cursor or (not pages) or (type(pages) == "number" and pagesFetched >= pages)
 
 	table.sort(transactions, function(a, b)
 		return a.created > b.created
