@@ -620,9 +620,9 @@ function ropi.SearchUser(name, refresh)
 		return ropi.GetUser(name, refresh)
 	end
 
-	local success, users = ropi.SearchUsers({name}, true, refresh)
+	local users = ropi.SearchUsers({name}, true, refresh)
 
-	if success and type(users) == "table" and users[1] then
+	if type(users) == "table" and users[1] then
 		return users[1]
 	else
 		return nil, users
