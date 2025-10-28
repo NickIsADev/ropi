@@ -607,7 +607,7 @@ function ropi.SearchUsers(usernames, fullUserObject, refresh)
 	if not next(users) and errorResponse then
 		return nil, errorResponse
 	else
-		return true, users
+		return users
 	end
 end
 
@@ -623,7 +623,7 @@ function ropi.SearchUser(name, refresh)
 	local success, users = ropi.SearchUsers({name}, true, refresh)
 
 	if success and type(users) == "table" and users[1] then
-		return true, users[1]
+		return users[1]
 	else
 		return nil, users
 	end
