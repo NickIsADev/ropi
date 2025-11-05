@@ -454,6 +454,76 @@ function ropi.GetToken()
 	return false, Error(500, "A token was not provided by the server.")
 end
 
+function ropi.GetAvatarHeadShots(ids, opts, refresh)
+	local debugInfo
+	for i = 1, 10 do
+		debugInfo = debug.getinfo(i, "Sl")
+		if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
+			break
+		end
+	end
+	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
+
+	if type(ids) ~= "table" then
+		return nil, Error(400, "An invalid ids table was provided to SearchUsers.")
+	end
+
+	for i, id in pairs(ids) do
+		if type(id) == "string" then
+			ids[i] = tonumber(id)
+		end
+	end
+
+	opts = opts or {}
+	local options = {
+		size = opts.size or 720,
+		format = opts.format or "Png",
+		isCircular = not not opts.isCircular
+	}
+
+	local avatars = {}
+
+	if not refresh then
+		for i = #ids, 1, -1 do
+			local id = ids[i]
+			local cached = ropi.cache.avatars[id]
+			if cached then
+				avatars[id] = cached
+				table.remove(ids, i)
+			end
+		end
+	end
+
+	local errorResponse
+
+	if next(ids) then
+		local success, response = ropi:queue({
+			api = "thumbnails",
+			method = "GET",
+			domains = true,
+			endpoint = "users/avatar-headshot?userIds=" .. table.concat(ids, ",") .. "&size=" .. options.size .. "x" .. options.size .. "&format=Png&isCircular=" .. tostring(options.isCircular),
+			origin = origin
+		})
+
+		if success and type(response) == "table" and type(response.data) == "table" and next(response.data) then
+			for _, avatarData in pairs(response.data) do
+				if type(avatarData) == "table" and avatarData.targetId and avatarData.state == "Completed" and avatarData.imageUrl then
+					ropi.cache.avatars[avatarData.targetId] = avatarData.imageUrl
+					avatars[avatarData.targetId] = avatarData.imageUrl
+				end
+			end
+		else
+			errorResponse = response
+		end
+	end
+
+	if not next(avatars) and errorResponse then
+		return nil, errorResponse
+	else
+		return avatars
+	end
+end
+
 function ropi.GetAvatarHeadShot(id, opts, refresh)
 	local debugInfo
 	for i = 1, 10 do
@@ -468,36 +538,13 @@ function ropi.GetAvatarHeadShot(id, opts, refresh)
 		return nil, Error(400, "An invalid ID was provided to GetAvatarHeadShot.")
 	end
 
-	opts = opts or {}
-	id = tonumber(id) or 0
+	local avatars, error = ropi.GetAvatarHeadShots({id}, opts, refresh)
 
-	if (not refresh) and ropi.cache.avatars[id] then
-		return ropi.cache.avatars[id]
+	if not error and type(avatars) == "table" and avatars[id] then
+		return avatars[id]
+	else
+		return nil, error or "Failed to get avatar headshot"
 	end
-
-	local options = {
-		size = opts.size or 720,
-		format = opts.format or "Png",
-		isCircular = not not opts.isCircular
-	}
-
-	local success, response = ropi:queue({
-		api = "thumbnails",
-		method = "GET",
-		domains = true,
-		endpoint = "users/avatar-headshot?userIds=" .. id .. "&size=" .. options.size .. "x" .. options.size .. "&format=Png&isCircular=" .. tostring(options.isCircular),
-		origin = origin
-	})
-
-	if success and response and response.data then
-		if response.data[1] and response.data[1].state == "Completed" and response.data[1].imageUrl then
-			ropi.cache.avatars[id] = response.data[1].imageUrl
-
-			return response.data[1].imageUrl
-		end
-	end
-
-	return nil, response
 end
 
 function ropi.GetUser(id, refresh)
