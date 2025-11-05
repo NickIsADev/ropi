@@ -175,6 +175,7 @@ local function WeakUser(data)
 		displayName = data.displayName,
 		name = data.name,
 		id = data.id,
+		avatar = data.avatar,
 		verified = not not data.hasVerifiedBadge,
 		profile = "https://roblox.com/users/" .. data.id .. "/profile",
 		hyperlink = "[" .. data.name .. "](<https://roblox.com/users/" .. data.id .. "/profile>)"
@@ -525,15 +526,6 @@ function ropi.GetAvatarHeadShots(ids, opts, refresh)
 end
 
 function ropi.GetAvatarHeadShot(id, opts, refresh)
-	local debugInfo
-	for i = 1, 10 do
-		debugInfo = debug.getinfo(i, "Sl")
-		if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
-			break
-		end
-	end
-	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
-
 	if type(id) ~= "string" and type(id) ~= "number" then
 		return nil, Error(400, "An invalid ID was provided to GetAvatarHeadShot.")
 	end
@@ -544,6 +536,109 @@ function ropi.GetAvatarHeadShot(id, opts, refresh)
 		return avatars[id]
 	else
 		return nil, error or "Failed to get avatar headshot"
+	end
+end
+
+function ropi.GetUsers(ids, opts, refresh)
+	local debugInfo
+	for i = 1, 10 do
+		debugInfo = debug.getinfo(i, "Sl")
+		if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
+			break
+		end
+	end
+	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
+
+	if type(ids) ~= "table" then
+		return nil, Error(400, "An invalid ids table was provided to SearchUsers.")
+	end
+
+	for i, id in pairs(ids) do
+		if type(id) == "string" then
+			ids[i] = tonumber(id)
+		end
+	end
+
+	opts = opts or {}
+	local options = {
+		fullObject = opts.fullObject,
+		avatars = opts.avatars
+	}
+
+	local users = {}
+
+	if not refresh then
+		for i = #ids, 1, -1 do
+			local id = ids[i]
+			if type(id) == "string" then
+				local cached = fromCache(id, "users") or (not options.fullObject and fromCache(id, "weakUsers"))
+				if cached then
+					table.insert(users, cached)
+					table.remove(ids, i)
+				end
+			end
+		end
+	end
+
+	local errorResponse
+
+	if next(ids) then
+		local success, response = ropi:queue({
+			api = "users",
+			method = "POST",
+			domains = {
+				"roblox",
+				"RoProxy",
+				"ropiproxy",
+				"ropiproxytwo",
+				"ropiproxythree"
+			},
+			endpoint = "users",
+			body = {
+				userIds = ids,
+				excludeBannedUsers = true
+			},
+			origin = origin
+		})
+
+		if success and type(response) == "table" and type(response.data) == "table" and next(response.data) then
+			local avatars
+			if options.avatars and not options.fullObject then
+				local userIds = {}
+				for _, userData in pairs(response.data) do
+					if type(userData) == "table" and userData.id then
+						table.insert(userIds, userData.id)
+					end
+				end
+				if #userIds > 0 then
+					avatars = ropi.GetAvatarHeadShots(userIds, opts, refresh)
+				end
+			end
+
+			for _, userData in pairs(response.data) do
+				if type(userData) == "table" and userData.id then
+					if options.fullObject then
+						local user = ropi.GetUser(userData.id)
+						if type(user) == "table" then
+							table.insert(users, user)
+						end
+					else
+						if avatars and avatars[userData.id] then
+							userData.avatar = avatars[userData.id]
+						end
+						table.insert(users, intoCache(WeakUser(userData), "weakUsers"))
+					end
+				end
+			end
+		else
+			errorResponse = response
+		end
+	end
+
+	if not next(users) and errorResponse then
+		return nil, errorResponse
+	else
+		return users
 	end
 end
 
@@ -583,7 +678,7 @@ function ropi.GetUser(id, refresh)
 	end
 end
 
-function ropi.SearchUsers(usernames, fullUserObject, refresh)
+function ropi.SearchUsers(usernames, opts, refresh)
 	local debugInfo
 	for i = 1, 10 do
 		debugInfo = debug.getinfo(i, "Sl")
@@ -597,13 +692,19 @@ function ropi.SearchUsers(usernames, fullUserObject, refresh)
 		return nil, Error(400, "An invalid username table was provided to SearchUsers.")
 	end
 
+	opts = opts or {}
+	local options = {
+		fullObject = opts.fullObject,
+		avatars = opts.avatars
+	}
+
 	local users = {}
 
 	if not refresh then
 		for i = #usernames, 1, -1 do
 			local username = usernames[i]
 			if type(username) == "string" then
-				local cached = fromCache(username, "users") or (not fullUserObject and fromCache(username, "weakUsers"))
+				local cached = fromCache(username, "users") or (not options.fullObject and fromCache(username, "weakUsers"))
 				if cached then
 					table.insert(users, cached)
 					table.remove(usernames, i)
@@ -634,14 +735,30 @@ function ropi.SearchUsers(usernames, fullUserObject, refresh)
 		})
 
 		if success and type(response) == "table" and type(response.data) == "table" and next(response.data) then
+			local avatars
+			if options.avatars and not options.fullObject then
+				local userIds = {}
+				for _, userData in pairs(response.data) do
+					if type(userData) == "table" and userData.id then
+						table.insert(userIds, userData.id)
+					end
+				end
+				if #userIds > 0 then
+					avatars = ropi.GetAvatarHeadShots(userIds, opts, refresh)
+				end
+			end
+
 			for _, userData in pairs(response.data) do
 				if type(userData) == "table" and userData.id then
-					if fullUserObject then
+					if options.fullObject then
 						local user = ropi.GetUser(userData.id)
 						if type(user) == "table" then
 							table.insert(users, user)
 						end
 					else
+						if avatars and avatars[userData.id] then
+							userData.avatar = avatars[userData.id]
+						end
 						table.insert(users, intoCache(WeakUser(userData), "weakUsers"))
 					end
 				end
