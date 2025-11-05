@@ -175,7 +175,7 @@ local function WeakUser(data)
 		displayName = data.displayName,
 		name = data.name,
 		id = data.id,
-		avatar = data.avatar,
+		avatar = data.avatar or "https://duckybot.xyz/images/icons/RobloxConfused.png",
 		verified = not not data.hasVerifiedBadge,
 		profile = "https://roblox.com/users/" .. data.id .. "/profile",
 		hyperlink = "[" .. data.name .. "](<https://roblox.com/users/" .. data.id .. "/profile>)"
@@ -562,7 +562,8 @@ function ropi.GetUsers(ids, opts, refresh)
 	opts = opts or {}
 	local options = {
 		fullObject = opts.fullObject,
-		avatars = opts.avatars
+		avatars = opts.avatars,
+		dictionary = opts.dictionary
 	}
 
 	local users = {}
@@ -620,13 +621,22 @@ function ropi.GetUsers(ids, opts, refresh)
 					if options.fullObject then
 						local user = ropi.GetUser(userData.id)
 						if type(user) == "table" then
-							table.insert(users, user)
+							if options.dictionary then
+								users[user.id] = user
+							else
+								table.insert(users, user)
+							end
 						end
 					else
 						if avatars and avatars[userData.id] then
 							userData.avatar = avatars[userData.id]
 						end
-						table.insert(users, intoCache(WeakUser(userData), "weakUsers"))
+
+						if options.dictionary then
+							users[userData.id] = intoCache(WeakUser(userData), "weakUsers")
+						else
+							table.insert(users, intoCache(WeakUser(userData), "weakUsers"))
+						end
 					end
 				end
 			end
@@ -695,7 +705,8 @@ function ropi.SearchUsers(usernames, opts, refresh)
 	opts = opts or {}
 	local options = {
 		fullObject = opts.fullObject,
-		avatars = opts.avatars
+		avatars = opts.avatars,
+		dictionary = opts.dictionary
 	}
 
 	local users = {}
@@ -753,13 +764,22 @@ function ropi.SearchUsers(usernames, opts, refresh)
 					if options.fullObject then
 						local user = ropi.GetUser(userData.id)
 						if type(user) == "table" then
-							table.insert(users, user)
+							if options.dictionary then
+								users[user.id] = user
+							else
+								table.insert(users, user)
+							end
 						end
 					else
 						if avatars and avatars[userData.id] then
 							userData.avatar = avatars[userData.id]
 						end
-						table.insert(users, intoCache(WeakUser(userData), "weakUsers"))
+
+						if options.dictionary then
+							users[userData.id] = intoCache(WeakUser(userData), "weakUsers")
+						else
+							table.insert(users, intoCache(WeakUser(userData), "weakUsers"))
+						end
 					end
 				end
 			end
