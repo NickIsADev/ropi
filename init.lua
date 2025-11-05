@@ -563,7 +563,8 @@ function ropi.GetUsers(ids, opts, refresh)
 	local options = {
 		fullObject = opts.fullObject,
 		avatars = opts.avatars,
-		dictionary = opts.dictionary
+		dictionary = opts.dictionary,
+		fillUnknown = opts.fillUnknown
 	}
 
 	local users = {}
@@ -642,6 +643,36 @@ function ropi.GetUsers(ids, opts, refresh)
 			end
 		else
 			errorResponse = response
+		end
+	end
+
+	if options.fillUnknown then
+		for _, id in pairs(ids) do
+			local found
+			for _, user in pairs(users) do
+				if user.id == id then
+					found = true
+					break
+				end
+			end
+
+			if not found then
+				local user = {
+					id = id,
+					displayName = "UnknownUser",
+					name = "UnknownUser",
+					avatar = "https://duckybot.xyz/images/icons/RobloxConfused.png",
+					profile = "https://roblox.com/users/" .. id .. "/profile",
+					verified = false,
+					hyperlink = "[UnknownUser](<https://roblox.com/users/" .. id .. "/profile>)"
+				}
+
+				if options.dictionary then
+					users[user.id] = user
+				else
+					table.insert(users, user)
+				end
+			end
 		end
 	end
 
@@ -804,7 +835,7 @@ function ropi.SearchUser(name, refresh)
 		return ropi.GetUser(name, refresh)
 	end
 
-	local users = ropi.SearchUsers({name}, true, refresh)
+	local users = ropi.SearchUsers({name}, {fullObject = true}, refresh)
 
 	if type(users) == "table" and users[1] then
 		return users[1]
