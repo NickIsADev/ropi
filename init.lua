@@ -132,6 +132,8 @@ end
 
 -- cache utilities
 
+local maxCacheSize = 250
+
 local function intoCache(item, category)
 	for i = #ropi.cache[category], 1, -1 do
 		local u = ropi.cache[category][i]
@@ -141,6 +143,10 @@ local function intoCache(item, category)
 	end
 
 	table.insert(ropi.cache[category], item)
+
+	if #ropi.cache[category] > maxCacheSize then
+		table.remove(ropi.cache[category], 1)
+	end
 
 	return item
 end
@@ -487,9 +493,15 @@ function ropi.GetAvatarHeadShots(ids, opts, refresh)
 	if not refresh then
 		for i = #ids, 1, -1 do
 			local id = ids[i]
-			local cached = ropi.cache.avatars[id]
-			if cached then
-				avatars[id] = cached
+			local cachedUrl
+			for _, item in ipairs(ropi.cache.avatars) do
+				if item.id == id then
+					cachedUrl = item.url
+					break
+				end
+			end
+			if cachedUrl then
+				avatars[id] = cachedUrl
 				table.remove(ids, i)
 			end
 		end
@@ -509,7 +521,10 @@ function ropi.GetAvatarHeadShots(ids, opts, refresh)
 		if success and type(response) == "table" and type(response.data) == "table" and next(response.data) then
 			for _, avatarData in pairs(response.data) do
 				if type(avatarData) == "table" and avatarData.targetId and avatarData.state == "Completed" and avatarData.imageUrl then
-					ropi.cache.avatars[avatarData.targetId] = avatarData.imageUrl
+					intoCache({
+						id = avatarData.targetId,
+						url = avatarData.imageUrl
+					}, "avatars")
 					avatars[avatarData.targetId] = avatarData.imageUrl
 				end
 			end
