@@ -962,7 +962,7 @@ function ropi.GetGroupTransactions(id, pages, loadUsers) -- pass true for pages 
 	until not cursor or (not pages) or (type(pages) == "number" and pagesFetched >= pages)
 
 	table.sort(transactions, function(a, b)
-		if not a.created or b.created then
+		if type(a.created) ~= "number" or type(b.created) ~= "number" then
 			return false
 		else
 			return a.created > b.created
