@@ -132,6 +132,8 @@ end
 
 -- cache utilities
 
+local maxCacheSize = 250
+
 local function intoCache(item, category)
 	for i = #ropi.cache[category], 1, -1 do
 		local u = ropi.cache[category][i]
@@ -141,6 +143,10 @@ local function intoCache(item, category)
 	end
 
 	table.insert(ropi.cache[category], item)
+
+	if #ropi.cache[category] > maxCacheSize then
+		table.remove(ropi.cache[category], 1)
+	end
 
 	return item
 end
@@ -175,6 +181,7 @@ local function WeakUser(data)
 		displayName = data.displayName,
 		name = data.name,
 		id = data.id,
+		avatar = data.avatar or "https://duckybot.xyz/images/icons/RobloxConfused.png",
 		verified = not not data.hasVerifiedBadge,
 		profile = "https://roblox.com/users/" .. data.id .. "/profile",
 		hyperlink = "[" .. data.name .. "](<https://roblox.com/users/" .. data.id .. "/profile>)"
@@ -454,7 +461,7 @@ function ropi.GetToken()
 	return false, Error(500, "A token was not provided by the server.")
 end
 
-function ropi.GetAvatarHeadShot(id, opts, refresh)
+function ropi.GetAvatarHeadShots(ids, opts, refresh)
 	local debugInfo
 	for i = 1, 10 do
 		debugInfo = debug.getinfo(i, "Sl")
@@ -464,40 +471,231 @@ function ropi.GetAvatarHeadShot(id, opts, refresh)
 	end
 	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
 
-	if type(id) ~= "string" and type(id) ~= "number" then
-		return nil, Error(400, "An invalid ID was provided to GetAvatarHeadShot.")
+	if type(ids) ~= "table" then
+		return nil, Error(400, "An invalid ids table was provided to SearchUsers.")
+	end
+
+	for i, id in pairs(ids) do
+		if type(id) == "string" then
+			ids[i] = tonumber(id)
+		end
 	end
 
 	opts = opts or {}
-	id = tonumber(id) or 0
-
-	if (not refresh) and ropi.cache.avatars[id] then
-		return ropi.cache.avatars[id]
-	end
-
 	local options = {
 		size = opts.size or 720,
 		format = opts.format or "Png",
 		isCircular = not not opts.isCircular
 	}
 
-	local success, response = ropi:queue({
-		api = "thumbnails",
-		method = "GET",
-		domains = true,
-		endpoint = "users/avatar-headshot?userIds=" .. id .. "&size=" .. options.size .. "x" .. options.size .. "&format=Png&isCircular=" .. tostring(options.isCircular),
-		origin = origin
-	})
+	local avatars = {}
 
-	if success and response and response.data then
-		if response.data[1] and response.data[1].state == "Completed" and response.data[1].imageUrl then
-			ropi.cache.avatars[id] = response.data[1].imageUrl
-
-			return response.data[1].imageUrl
+	if not refresh then
+		for i = #ids, 1, -1 do
+			local id = ids[i]
+			local cachedUrl
+			for _, item in ipairs(ropi.cache.avatars) do
+				if item.id == id then
+					cachedUrl = item.url
+					break
+				end
+			end
+			if cachedUrl then
+				avatars[id] = cachedUrl
+				table.remove(ids, i)
+			end
 		end
 	end
 
-	return nil, response
+	local errorResponse
+
+	if next(ids) then
+		local success, response = ropi:queue({
+			api = "thumbnails",
+			method = "GET",
+			domains = true,
+			endpoint = "users/avatar-headshot?userIds=" .. table.concat(ids, ",") .. "&size=" .. options.size .. "x" .. options.size .. "&format=Png&isCircular=" .. tostring(options.isCircular),
+			origin = origin
+		})
+
+		if success and type(response) == "table" and type(response.data) == "table" and next(response.data) then
+			for _, avatarData in pairs(response.data) do
+				if type(avatarData) == "table" and avatarData.targetId and avatarData.state == "Completed" and avatarData.imageUrl then
+					intoCache({
+						id = avatarData.targetId,
+						url = avatarData.imageUrl
+					}, "avatars")
+					avatars[avatarData.targetId] = avatarData.imageUrl
+				end
+			end
+		else
+			errorResponse = response
+		end
+	end
+
+	if not next(avatars) and errorResponse then
+		return nil, errorResponse
+	else
+		return avatars
+	end
+end
+
+function ropi.GetAvatarHeadShot(id, opts, refresh)
+	if type(id) ~= "string" and type(id) ~= "number" then
+		return nil, Error(400, "An invalid ID was provided to GetAvatarHeadShot.")
+	end
+
+	local avatars, error = ropi.GetAvatarHeadShots({id}, opts, refresh)
+
+	if not error and type(avatars) == "table" and avatars[id] then
+		return avatars[id]
+	else
+		return nil, error or "Failed to get avatar headshot"
+	end
+end
+
+function ropi.GetUsers(ids, opts, refresh)
+	local debugInfo
+	for i = 1, 10 do
+		debugInfo = debug.getinfo(i, "Sl")
+		if (debugInfo) and (not debugInfo.short_src:lower():find("ropi")) and (debugInfo.what ~= "C") then
+			break
+		end
+	end
+	local origin = (debugInfo and (debugInfo.short_src .. ":" .. debugInfo.currentline)) or nil
+
+	if type(ids) ~= "table" then
+		return nil, Error(400, "An invalid ids table was provided to SearchUsers.")
+	end
+
+	for i, id in pairs(ids) do
+		if type(id) == "string" then
+			ids[i] = tonumber(id)
+		end
+	end
+
+	opts = opts or {}
+	local options = {
+		fullObject = opts.fullObject,
+		avatars = opts.avatars,
+		dictionary = opts.dictionary,
+		fillUnknown = opts.fillUnknown
+	}
+
+	local users = {}
+
+	if not refresh then
+		for i = #ids, 1, -1 do
+			local id = ids[i]
+			if type(id) == "string" then
+				local cached = fromCache(id, "users") or (not options.fullObject and fromCache(id, "weakUsers"))
+				if cached then
+					table.insert(users, cached)
+					table.remove(ids, i)
+				end
+			end
+		end
+	end
+
+	local errorResponse
+
+	if next(ids) then
+		local success, response = ropi:queue({
+			api = "users",
+			method = "POST",
+			domains = {
+				"roblox",
+				"RoProxy",
+				"ropiproxy",
+				"ropiproxytwo",
+				"ropiproxythree"
+			},
+			endpoint = "users",
+			body = {
+				userIds = ids,
+				excludeBannedUsers = true
+			},
+			origin = origin
+		})
+
+		if success and type(response) == "table" and type(response.data) == "table" and next(response.data) then
+			local avatars
+			if options.avatars and not options.fullObject then
+				local userIds = {}
+				for _, userData in pairs(response.data) do
+					if type(userData) == "table" and userData.id then
+						table.insert(userIds, userData.id)
+					end
+				end
+				if #userIds > 0 then
+					avatars = ropi.GetAvatarHeadShots(userIds, opts, refresh)
+				end
+			end
+
+			for _, userData in pairs(response.data) do
+				if type(userData) == "table" and userData.id then
+					if options.fullObject then
+						local user = ropi.GetUser(userData.id)
+						if type(user) == "table" then
+							if options.dictionary then
+								users[user.id] = user
+							else
+								table.insert(users, user)
+							end
+						end
+					else
+						if avatars and avatars[userData.id] then
+							userData.avatar = avatars[userData.id]
+						end
+
+						if options.dictionary then
+							users[userData.id] = intoCache(WeakUser(userData), "weakUsers")
+						else
+							table.insert(users, intoCache(WeakUser(userData), "weakUsers"))
+						end
+					end
+				end
+			end
+		else
+			errorResponse = response
+		end
+	end
+
+	if options.fillUnknown then
+		for _, id in pairs(ids) do
+			local found
+			for _, user in pairs(users) do
+				if user.id == id then
+					found = true
+					break
+				end
+			end
+
+			if not found then
+				local user = {
+					id = id,
+					displayName = "UnknownUser",
+					name = "UnknownUser",
+					avatar = "https://duckybot.xyz/images/icons/RobloxConfused.png",
+					profile = "https://roblox.com/users/" .. id .. "/profile",
+					verified = false,
+					hyperlink = "[UnknownUser](<https://roblox.com/users/" .. id .. "/profile>)"
+				}
+
+				if options.dictionary then
+					users[user.id] = user
+				else
+					table.insert(users, user)
+				end
+			end
+		end
+	end
+
+	if not next(users) and errorResponse then
+		return nil, errorResponse
+	else
+		return users
+	end
 end
 
 function ropi.GetUser(id, refresh)
@@ -536,7 +734,7 @@ function ropi.GetUser(id, refresh)
 	end
 end
 
-function ropi.SearchUsers(usernames, fullUserObject, refresh)
+function ropi.SearchUsers(usernames, opts, refresh)
 	local debugInfo
 	for i = 1, 10 do
 		debugInfo = debug.getinfo(i, "Sl")
@@ -550,13 +748,20 @@ function ropi.SearchUsers(usernames, fullUserObject, refresh)
 		return nil, Error(400, "An invalid username table was provided to SearchUsers.")
 	end
 
+	opts = opts or {}
+	local options = {
+		fullObject = opts.fullObject,
+		avatars = opts.avatars,
+		dictionary = opts.dictionary
+	}
+
 	local users = {}
 
 	if not refresh then
 		for i = #usernames, 1, -1 do
 			local username = usernames[i]
 			if type(username) == "string" then
-				local cached = fromCache(username, "users") or (not fullUserObject and fromCache(username, "weakUsers"))
+				local cached = fromCache(username, "users") or (not options.fullObject and fromCache(username, "weakUsers"))
 				if cached then
 					table.insert(users, cached)
 					table.remove(usernames, i)
@@ -587,15 +792,40 @@ function ropi.SearchUsers(usernames, fullUserObject, refresh)
 		})
 
 		if success and type(response) == "table" and type(response.data) == "table" and next(response.data) then
+			local avatars
+			if options.avatars and not options.fullObject then
+				local userIds = {}
+				for _, userData in pairs(response.data) do
+					if type(userData) == "table" and userData.id then
+						table.insert(userIds, userData.id)
+					end
+				end
+				if #userIds > 0 then
+					avatars = ropi.GetAvatarHeadShots(userIds, opts, refresh)
+				end
+			end
+
 			for _, userData in pairs(response.data) do
 				if type(userData) == "table" and userData.id then
-					if fullUserObject then
+					if options.fullObject then
 						local user = ropi.GetUser(userData.id)
 						if type(user) == "table" then
-							table.insert(users, user)
+							if options.dictionary then
+								users[user.id] = user
+							else
+								table.insert(users, user)
+							end
 						end
 					else
-						table.insert(users, intoCache(WeakUser(userData), "weakUsers"))
+						if avatars and avatars[userData.id] then
+							userData.avatar = avatars[userData.id]
+						end
+
+						if options.dictionary then
+							users[userData.id] = intoCache(WeakUser(userData), "weakUsers")
+						else
+							table.insert(users, intoCache(WeakUser(userData), "weakUsers"))
+						end
 					end
 				end
 			end
@@ -620,7 +850,7 @@ function ropi.SearchUser(name, refresh)
 		return ropi.GetUser(name, refresh)
 	end
 
-	local users = ropi.SearchUsers({name}, true, refresh)
+	local users = ropi.SearchUsers({name}, {fullObject = true}, refresh)
 
 	if type(users) == "table" and users[1] then
 		return users[1]
@@ -732,7 +962,11 @@ function ropi.GetGroupTransactions(id, pages, loadUsers) -- pass true for pages 
 	until not cursor or (not pages) or (type(pages) == "number" and pagesFetched >= pages)
 
 	table.sort(transactions, function(a, b)
-		return a.created > b.created
+		if type(a.created) ~= "number" or type(b.created) ~= "number" then
+			return false
+		else
+			return a.created > b.created
+		end
 	end)
 
 	return transactions
