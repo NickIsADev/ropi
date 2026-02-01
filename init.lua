@@ -415,6 +415,10 @@ function ropi:request(api, method, endpoint, headers, body, domain, expectedCode
 		return false, Error(500, "An unknown error occurred."), result
 	end
 
+	if result.code ~= 200 then
+		print("ROPI NON 200: " .. tostring(result.code) .. " : " .. tostring(method) .. " : " .. tostring(url) .. " : " .. tostring(expectedCode))
+	end
+
 	if result.code == 200 then
 		return true, response, result
 	elseif expectedCode and result.code == expectedCode then
